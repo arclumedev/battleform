@@ -9,7 +9,7 @@ const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
 
 /// Camera rotation for Civ-style tilt (~25 degrees, tilted left)
-const CAM_ANGLE: f32 = -0.44;
+const CAM_ANGLE: f32 = -0.22;
 /// Camera Y scale for isometric foreshortening
 const CAM_Y_SCALE: f32 = 0.58;
 
@@ -356,10 +356,12 @@ fn fog_alpha(visibility: &[Vec<VisibilityState>], x: usize, y: usize) -> f32 {
 }
 
 pub fn camera_controls(
+    keys: Res<ButtonInput<KeyCode>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut scroll_events: EventReader<MouseWheel>,
     windows: Query<&Window>,
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    time: Res<Time>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -368,6 +370,30 @@ pub fn camera_controls(
         return;
     };
 
+    // Keyboard pan (WASD + arrow keys)
+    let speed = 200.0 * time.delta_secs();
+    let mut move_dir = Vec2::ZERO;
+
+    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+        move_dir.y += 1.0;
+    }
+    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+        move_dir.y -= 1.0;
+    }
+    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
+        move_dir.x -= 1.0;
+    }
+    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
+        move_dir.x += 1.0;
+    }
+
+    if move_dir != Vec2::ZERO {
+        let move_dir = move_dir.normalize() * speed;
+        transform.translation.x += move_dir.x;
+        transform.translation.y += move_dir.y;
+    }
+
+    // Scroll zoom
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *projection {
             let factor = if event.y > 0.0 { 0.9 } else { 1.1 };
@@ -375,6 +401,7 @@ pub fn camera_controls(
         }
     }
 
+    // Right-click drag pan
     if mouse_button.pressed(MouseButton::Right) {
         if let Some(cursor) = window.cursor_position() {
             let center = Vec2::new(window.width() / 2.0, window.height() / 2.0);
