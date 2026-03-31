@@ -8,8 +8,8 @@ const HEX_SIZE: f32 = 12.0;
 const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
 
-/// Camera rotation for Civ-style tilt (~25 degrees)
-const CAM_ANGLE: f32 = 0.44;
+/// Camera rotation for Civ-style tilt (~25 degrees, tilted left)
+const CAM_ANGLE: f32 = -0.44;
 /// Camera Y scale for isometric foreshortening
 const CAM_Y_SCALE: f32 = 0.58;
 
