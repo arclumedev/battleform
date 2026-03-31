@@ -4,26 +4,35 @@ use bevy::prelude::*;
 use crate::state::*;
 use crate::EntityMap;
 
-const HEX_SIZE: f32 = 12.0; // Radius of circumscribed circle
+const HEX_SIZE: f32 = 12.0;
 const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
-const ISO_Y_SCALE: f32 = 0.55; // Isometric squish factor for Y axis
+const ISO_Y_SCALE: f32 = 0.5; // Vertical squish (isometric foreshortening)
+const ISO_SHEAR: f32 = 0.45; // Horizontal shear (Civ-style angle)
 
-/// Convert hex grid (col, row) in odd-r offset to isometric pixel coordinates.
+/// Convert hex grid (col, row) to Civ-style isometric pixel coordinates.
+/// Applies: 1) standard hex layout, 2) Y squish, 3) horizontal shear.
 fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
-    let px = col as f32 * HEX_WIDTH + offset;
-    let py = -(row as f32 * HEX_HEIGHT * 0.75) * ISO_Y_SCALE;
-    Vec2::new(px, py)
+    let flat_x = col as f32 * HEX_WIDTH + offset;
+    let flat_y = -(row as f32 * HEX_HEIGHT * 0.75);
+
+    // Isometric transform: squish Y, then shear X based on Y
+    let iso_y = flat_y * ISO_Y_SCALE;
+    let iso_x = flat_x + flat_y * ISO_SHEAR;
+    Vec2::new(iso_x, iso_y)
 }
 
 /// Convert world pixel coordinates back to the nearest hex grid (col, row).
 fn pixel_to_hex(world: Vec2) -> (i32, i32) {
-    // Reverse the isometric squish to get back to grid space
-    let unsquished_y = world.y / ISO_Y_SCALE;
-    let row = (-unsquished_y / (HEX_HEIGHT * 0.75)).round() as i32;
+    // Reverse: un-shear, un-squish, then standard hex lookup
+    let iso_y = world.y;
+    let flat_y = iso_y / ISO_Y_SCALE;
+    let flat_x = world.x - flat_y * ISO_SHEAR;
+
+    let row = (-flat_y / (HEX_HEIGHT * 0.75)).round() as i32;
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
-    let col = ((world.x - offset) / HEX_WIDTH).round() as i32;
+    let col = ((flat_x - offset) / HEX_WIDTH).round() as i32;
     (col, row)
 }
 
