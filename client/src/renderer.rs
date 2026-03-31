@@ -7,22 +7,29 @@ use crate::EntityMap;
 const HEX_SIZE: f32 = 12.0; // Radius of circumscribed circle
 const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
+const ISO_Y_SCALE: f32 = 0.55; // Isometric squish factor for Y axis
 
-/// Convert hex grid (col, row) in odd-r offset to pixel coordinates.
+/// Convert hex grid (col, row) in odd-r offset to isometric pixel coordinates.
 fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
     let px = col as f32 * HEX_WIDTH + offset;
-    let py = -(row as f32 * HEX_HEIGHT * 0.75);
+    let py = -(row as f32 * HEX_HEIGHT * 0.75) * ISO_Y_SCALE;
     Vec2::new(px, py)
 }
 
 /// Convert world pixel coordinates back to the nearest hex grid (col, row).
 fn pixel_to_hex(world: Vec2) -> (i32, i32) {
-    // Approximate row from y, then refine col accounting for odd-r offset
-    let row = (-world.y / (HEX_HEIGHT * 0.75)).round() as i32;
+    // Reverse the isometric squish to get back to grid space
+    let unsquished_y = world.y / ISO_Y_SCALE;
+    let row = (-unsquished_y / (HEX_HEIGHT * 0.75)).round() as i32;
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
     let col = ((world.x - offset) / HEX_WIDTH).round() as i32;
     (col, row)
+}
+
+/// Public wrapper for JS tooltip queries.
+pub fn pixel_to_hex_pub(world_x: f32, world_y: f32) -> (i32, i32) {
+    pixel_to_hex(Vec2::new(world_x, world_y))
 }
 
 const PLAYER_COLORS: [Color; 8] = [
@@ -58,42 +65,11 @@ pub struct FogTile;
 #[derive(Component)]
 pub struct TerrainTile;
 
-#[derive(Component)]
-pub struct TooltipText;
-
-#[derive(Component)]
-pub struct TooltipBg;
-
 pub fn setup_camera(mut commands: Commands) {
     let center = hex_to_pixel(16, 16);
     commands.spawn((
         Camera2d,
         Transform::from_xyz(center.x, center.y, 999.0),
-    ));
-
-    // Tooltip background (dark semi-transparent sprite)
-    commands.spawn((
-        Sprite {
-            color: Color::srgba(0.05, 0.05, 0.1, 0.85),
-            custom_size: Some(Vec2::ZERO),
-            ..default()
-        },
-        Transform::from_xyz(0.0, 0.0, 9.0),
-        Visibility::Hidden,
-        TooltipBg,
-    ));
-
-    // Tooltip text
-    commands.spawn((
-        Text2d::new(""),
-        TextFont {
-            font_size: 11.0,
-            ..default()
-        },
-        TextColor(Color::srgb(0.9, 0.9, 0.9)),
-        Transform::from_xyz(0.0, 0.0, 10.0),
-        Visibility::Hidden,
-        TooltipText,
     ));
 }
 
@@ -155,7 +131,8 @@ fn spawn_terrain(
             commands.spawn((
                 Mesh2d(hex_mesh.clone()),
                 MeshMaterial2d(mat),
-                Transform::from_xyz(pos.x, pos.y, 0.0),
+                Transform::from_xyz(pos.x, pos.y, 0.0)
+                    .with_scale(Vec3::new(1.0, ISO_Y_SCALE, 1.0)),
                 TerrainTile,
             ));
         }
@@ -168,11 +145,12 @@ fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut E
 
     for unit in &state.units {
         seen.insert(unit.id.clone());
-        let size = match unit.unit_type {
-            UnitType::Worker => Vec2::splat(HEX_SIZE * 0.8),
-            UnitType::Soldier => Vec2::splat(HEX_SIZE * 1.3),
-            UnitType::Scout => Vec2::splat(HEX_SIZE),
+        let s = match unit.unit_type {
+            UnitType::Worker => HEX_SIZE * 0.8,
+            UnitType::Soldier => HEX_SIZE * 1.3,
+            UnitType::Scout => HEX_SIZE,
         };
+        let size = Vec2::new(s, s * ISO_Y_SCALE);
         let p = hex_to_pixel(unit.x, unit.y);
 
         if let Some(&entity) = entity_map.units.get(&unit.id) {
@@ -219,7 +197,7 @@ fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &m
         let pos = Transform::from_xyz(p.x, p.y, 1.0);
         let sprite = Sprite {
             color: player_color(building.player_slot),
-            custom_size: Some(Vec2::splat(HEX_SIZE * 1.6)),
+            custom_size: Some(Vec2::new(HEX_SIZE * 1.6, HEX_SIZE * 1.6 * ISO_Y_SCALE)),
             ..default()
         };
 
@@ -254,7 +232,7 @@ fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &m
         let pos = Transform::from_xyz(p.x, p.y, 1.5);
         let sprite = Sprite {
             color,
-            custom_size: Some(Vec2::splat(HEX_SIZE * 0.8)),
+            custom_size: Some(Vec2::new(HEX_SIZE * 0.8, HEX_SIZE * 0.8 * ISO_Y_SCALE)),
             ..default()
         };
 
@@ -310,7 +288,8 @@ fn sync_fog(
                     .spawn((
                         Mesh2d(hex_mesh.clone()),
                         MeshMaterial2d(mat),
-                        Transform::from_xyz(p.x, p.y, 5.0),
+                        Transform::from_xyz(p.x, p.y, 5.0)
+                            .with_scale(Vec3::new(1.0, ISO_Y_SCALE, 1.0)),
                         FogTile,
                     ))
                     .id();
@@ -371,97 +350,37 @@ pub fn camera_controls(
     }
 }
 
-#[allow(clippy::type_complexity)]
-pub fn update_tooltip(
-    state: Res<GameStateView>,
-    windows: Query<&Window>,
+/// Each frame, push the camera state into the global so JS can use it for tooltips.
+pub fn export_camera_state(
     camera_q: Query<(&Transform, &Projection), With<Camera2d>>,
-    mut text_q: Query<
-        (&mut Text2d, &mut Transform, &mut Visibility),
-        (With<TooltipText>, Without<Camera2d>, Without<TooltipBg>),
-    >,
-    mut bg_q: Query<
-        (&mut Sprite, &mut Transform, &mut Visibility),
-        (With<TooltipBg>, Without<Camera2d>, Without<TooltipText>),
-    >,
+    windows: Query<&Window>,
 ) {
+    let Ok((transform, projection)) = camera_q.single() else {
+        return;
+    };
     let Ok(window) = windows.single() else {
         return;
     };
-    let Ok((cam_transform, projection)) = camera_q.single() else {
-        return;
-    };
-    let Ok((mut text, mut text_tf, mut text_vis)) = text_q.single_mut() else {
-        return;
-    };
-    let Ok((mut bg_sprite, mut bg_tf, mut bg_vis)) = bg_q.single_mut() else {
-        return;
-    };
-
-    let Some(cursor_pos) = window.cursor_position() else {
-        *text_vis = Visibility::Hidden;
-        *bg_vis = Visibility::Hidden;
-        return;
-    };
-
-    // Convert screen position to world coordinates
     let scale = if let Projection::Orthographic(ref ortho) = *projection {
         ortho.scale
     } else {
         1.0
     };
-
-    let screen_center = Vec2::new(window.width() / 2.0, window.height() / 2.0);
-    let screen_offset = cursor_pos - screen_center;
-    let world_pos = Vec2::new(
-        cam_transform.translation.x + screen_offset.x * scale,
-        cam_transform.translation.y - screen_offset.y * scale,
-    );
-
-    let (col, row) = pixel_to_hex(world_pos);
-
-    // Out of bounds — hide tooltip
-    if col < 0
-        || row < 0
-        || col >= state.map_width as i32
-        || row >= state.map_height as i32
-        || state.map_width == 0
-    {
-        *text_vis = Visibility::Hidden;
-        *bg_vis = Visibility::Hidden;
-        return;
+    if let Ok(mut cam) = crate::CAMERA_STATE.lock() {
+        *cam = crate::CameraSnapshot {
+            x: transform.translation.x,
+            y: transform.translation.y,
+            scale,
+            win_w: window.width(),
+            win_h: window.height(),
+        };
     }
+}
 
-    // Build tooltip content
-    let mut lines: Vec<String> = Vec::new();
-    lines.push(format!("Hex ({}, {})", col, row));
+/// Build tooltip lines for a given hex. Used by the exported wasm-bindgen function.
+pub fn tile_info_at(state: &GameStateView, col: i32, row: i32) -> Vec<String> {
+    let mut lines = Vec::new();
 
-    // Terrain
-    if let Some(tile) = state
-        .terrain
-        .get(row as usize)
-        .and_then(|r| r.get(col as usize))
-    {
-        lines.push(match tile {
-            TileType::Open => "Terrain: Open".into(),
-            TileType::Blocked => "Terrain: Blocked".into(),
-        });
-    }
-
-    // Visibility
-    if let Some(vis) = state
-        .visibility
-        .get(row as usize)
-        .and_then(|r| r.get(col as usize))
-    {
-        lines.push(match vis {
-            VisibilityState::Visible => "Visibility: Visible".into(),
-            VisibilityState::PreviouslySeen => "Visibility: Fog".into(),
-            VisibilityState::Unseen => "Visibility: Unseen".into(),
-        });
-    }
-
-    // Units on this tile
     for unit in &state.units {
         if unit.x == col && unit.y == row {
             let type_name = match unit.unit_type {
@@ -488,7 +407,6 @@ pub fn update_tooltip(
         }
     }
 
-    // Buildings on this tile
     for building in &state.buildings {
         if building.x == col && building.y == row {
             let type_name = match building.building_type {
@@ -510,41 +428,11 @@ pub fn update_tooltip(
         }
     }
 
-    // Resources on this tile
     for resource in &state.resources {
         if resource.x == col && resource.y == row {
             lines.push(format!("Resource: {} remaining", resource.remaining));
         }
     }
 
-    let content = lines.join("\n");
-    text.0 = content.clone();
-
-    // Position tooltip offset from cursor in world space
-    let tooltip_offset = Vec2::new(15.0, -15.0) * scale;
-    let tooltip_world = Vec2::new(
-        world_pos.x + tooltip_offset.x,
-        world_pos.y + tooltip_offset.y,
-    );
-
-    // Scale text inversely to camera zoom so it stays readable
-    let text_scale = scale.max(0.5);
-    text_tf.translation = Vec3::new(tooltip_world.x, tooltip_world.y, 10.0);
-    text_tf.scale = Vec3::splat(text_scale);
-    *text_vis = Visibility::Visible;
-
-    // Size the background to fit the text
-    let line_count = content.lines().count() as f32;
-    let max_chars = content.lines().map(|l| l.len()).max().unwrap_or(0) as f32;
-    let bg_width = max_chars * 6.5 + 12.0;
-    let bg_height = line_count * 14.0 + 8.0;
-
-    bg_sprite.custom_size = Some(Vec2::new(bg_width, bg_height));
-    bg_tf.translation = Vec3::new(
-        tooltip_world.x + bg_width * text_scale * 0.5 - 4.0 * text_scale,
-        tooltip_world.y - bg_height * text_scale * 0.5 + 6.0 * text_scale,
-        9.0,
-    );
-    bg_tf.scale = Vec3::splat(text_scale);
-    *bg_vis = Visibility::Visible;
+    lines
 }
