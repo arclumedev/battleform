@@ -130,6 +130,18 @@ pub fn sync_entities(
     sync_fog(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
 }
 
+fn tile_color(tile_type: &TileType) -> Color {
+    match tile_type {
+        TileType::Grass => Color::srgb(0.22, 0.38, 0.18),
+        TileType::Desert => Color::srgb(0.55, 0.45, 0.28),
+        TileType::Forest => Color::srgb(0.12, 0.28, 0.10),
+        TileType::Mountain => Color::srgb(0.35, 0.32, 0.30),
+        TileType::WaterLake => Color::srgb(0.15, 0.30, 0.50),
+        TileType::WaterSea => Color::srgb(0.10, 0.22, 0.42),
+        TileType::Snow => Color::srgb(0.70, 0.72, 0.75),
+    }
+}
+
 fn spawn_terrain(
     commands: &mut Commands,
     state: &GameStateView,
@@ -139,29 +151,47 @@ fn spawn_terrain(
 ) {
     let hex_mesh = meshes.add(RegularPolygon::new(HEX_SIZE - 0.5, 6));
 
-    let open_mat = materials.add(ColorMaterial::from_color(Color::srgb(0.15, 0.2, 0.15)));
-    let blocked_mat = materials.add(ColorMaterial::from_color(Color::srgb(0.3, 0.25, 0.2)));
+    // Pre-create materials for each tile type
+    let tile_mats: std::collections::HashMap<String, Handle<ColorMaterial>> = [
+        TileType::Grass,
+        TileType::Desert,
+        TileType::Forest,
+        TileType::Mountain,
+        TileType::WaterLake,
+        TileType::WaterSea,
+        TileType::Snow,
+    ]
+    .into_iter()
+    .map(|t| {
+        let key = format!("{:?}", t);
+        let mat = materials.add(ColorMaterial::from_color(tile_color(&t)));
+        (key, mat)
+    })
+    .collect();
+
+    let default_mat = materials.add(ColorMaterial::from_color(tile_color(&TileType::Grass)));
 
     for y in 0..state.map_height {
         for x in 0..state.map_width {
-            let is_blocked = state
+            let tile = state
                 .terrain
                 .get(y as usize)
-                .and_then(|row| row.get(x as usize))
-                .map(|tile| *tile == TileType::Blocked)
-                .unwrap_or(false);
+                .and_then(|row| row.get(x as usize));
+
+            let tile_type = tile.map(|t| &t.tile_type).unwrap_or(&TileType::Grass);
+            let elevation = tile.map(|t| t.elevation).unwrap_or(1);
 
             let pos = hex_to_pixel(x as i32, y as i32);
-            let mat = if is_blocked {
-                blocked_mat.clone()
-            } else {
-                open_mat.clone()
-            };
+            let key = format!("{:?}", tile_type);
+            let mat = tile_mats.get(&key).cloned().unwrap_or(default_mat.clone());
+
+            // Elevation: shift Y up slightly for higher tiles
+            let elev_offset = elevation as f32 * 1.5;
 
             commands.spawn((
                 Mesh2d(hex_mesh.clone()),
                 MeshMaterial2d(mat),
-                Transform::from_xyz(pos.x, pos.y, 0.0),
+                Transform::from_xyz(pos.x, pos.y + elev_offset, elevation as f32 * 0.1),
                 TerrainTile,
             ));
         }

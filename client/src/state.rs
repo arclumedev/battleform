@@ -8,7 +8,7 @@ pub struct GameStateView {
     pub map_width: u32,
     pub map_height: u32,
     #[serde(default)]
-    pub terrain: Vec<Vec<TileType>>,
+    pub terrain: Vec<Vec<Tile>>,
     #[serde(default)]
     pub units: Vec<UnitView>,
     #[serde(default)]
@@ -165,12 +165,30 @@ pub struct VisUpdate {
     pub state: VisibilityState,
 }
 
+/// A single tile in the terrain grid.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Tile {
+    #[serde(rename = "type")]
+    pub tile_type: TileType,
+    #[serde(default = "default_elevation")]
+    pub elevation: u8,
+}
+
+fn default_elevation() -> u8 {
+    1
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum TileType {
     #[default]
-    Open,
-    Blocked,
+    Grass,
+    Desert,
+    Forest,
+    Mountain,
+    WaterLake,
+    WaterSea,
+    Snow,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]

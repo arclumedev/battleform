@@ -63,7 +63,9 @@ export function findPath(state: GameState, start: Position, end: Position): Posi
       if (closedSet.has(nKey)) continue
       if (state.isBlocked(neighbor.x, neighbor.y)) continue
 
-      const g = current.g + 1
+      const moveCost = state.getMovementCost(neighbor.x, neighbor.y)
+      if (moveCost === Infinity) continue
+      const g = current.g + moveCost
       const existing = openSet.find((n) => n.x === neighbor.x && n.y === neighbor.y)
 
       if (existing) {

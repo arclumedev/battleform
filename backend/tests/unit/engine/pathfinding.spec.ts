@@ -13,7 +13,7 @@ test.group('Pathfinding', () => {
 
   test('returns empty path when destination is blocked', ({ assert }) => {
     const state = createTestState()
-    state.terrain[5][5] = 'blocked'
+    state.terrain[5][5] = { type: 'mountain', elevation: 3 }
 
     const path = findPath(state, { x: 4, y: 5 }, { x: 5, y: 5 })
     assert.lengthOf(path, 0)
@@ -29,7 +29,7 @@ test.group('Pathfinding', () => {
     const state = createTestState()
     // Create a wall from y=3 to y=7 at x=5
     for (let y = 3; y <= 7; y++) {
-      state.terrain[y][5] = 'blocked'
+      state.terrain[y][5] = { type: 'mountain', elevation: 3 }
     }
 
     const path = findPath(state, { x: 4, y: 5 }, { x: 6, y: 5 })
