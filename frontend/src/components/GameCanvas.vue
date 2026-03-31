@@ -1,16 +1,14 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, nextTick } from 'vue'
 import { GameBridge } from '../lib/bridge'
 
 const props = defineProps<{ matchId: string }>()
 
 const bridge = new GameBridge()
-const canvasReady = ref(false)
 const wasmAvailable = ref(false)
 const statusMessage = ref('Initializing...')
 
 onMounted(async () => {
-  canvasReady.value = true
   statusMessage.value = 'Loading WASM game client...'
   wasmAvailable.value = await bridge.init()
 
@@ -18,13 +16,35 @@ onMounted(async () => {
     statusMessage.value = 'Connecting to match...'
     bridge.connectSpectator(props.matchId)
     statusMessage.value = ''
+
+    // Focus the WASM canvas so it captures keyboard input immediately
+    await nextTick()
+    const canvas = document.getElementById('glcanvas') as HTMLCanvasElement | null
+    if (canvas) {
+      canvas.tabIndex = 0
+      canvas.focus()
+
+      // Re-focus canvas when clicked anywhere on the page
+      // (in case user clicks a HUD button and focus shifts)
+      document.addEventListener('click', refocusCanvas)
+    }
   } else {
-    statusMessage.value = 'WASM game client not available. Spectating in data-only mode.'
+    statusMessage.value = 'WASM game client not available.'
   }
 })
 
+function refocusCanvas() {
+  const canvas = document.getElementById('glcanvas') as HTMLCanvasElement | null
+  // Only refocus if the click target isn't an interactive HUD element
+  const active = document.activeElement
+  if (canvas && (!active || !active.closest('.hud-sidebar, .hud-top'))) {
+    canvas.focus()
+  }
+}
+
 onUnmounted(() => {
   bridge.disconnect()
+  document.removeEventListener('click', refocusCanvas)
 })
 </script>
 
@@ -43,14 +63,14 @@ onUnmounted(() => {
 
 <style scoped>
 .game-canvas-wrapper {
-  width: 100%;
-  height: 100%;
-  position: relative;
+  position: absolute;
+  inset: 0;
 }
 .game-canvas {
-  width: 100%;
-  height: 100%;
+  width: 100% !important;
+  height: 100% !important;
   display: block;
+  outline: none;
 }
 .status-overlay {
   position: absolute;
