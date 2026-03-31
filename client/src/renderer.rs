@@ -124,9 +124,9 @@ pub fn sync_entities(
         );
     }
 
-    sync_units(&mut commands, &state, &mut entity_map);
-    sync_buildings(&mut commands, &state, &mut entity_map);
-    sync_resources(&mut commands, &state, &mut entity_map);
+    sync_units(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
+    sync_buildings(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
+    sync_resources(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
     sync_fog(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
 }
 
@@ -169,35 +169,37 @@ fn spawn_terrain(
     entity_map.terrain_spawned = true;
 }
 
-fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_units(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for unit in &state.units {
         seen.insert(unit.id.clone());
-        let size = match unit.unit_type {
-            UnitType::Worker => Vec2::splat(HEX_SIZE * 0.8),
-            UnitType::Soldier => Vec2::splat(HEX_SIZE * 1.3),
-            UnitType::Scout => Vec2::splat(HEX_SIZE),
+        let radius = match unit.unit_type {
+            UnitType::Worker => HEX_SIZE * 0.35,
+            UnitType::Soldier => HEX_SIZE * 0.55,
+            UnitType::Scout => HEX_SIZE * 0.4,
         };
         let p = hex_to_pixel(unit.x, unit.y);
+        let mat = materials.add(ColorMaterial::from_color(player_color(unit.player_slot)));
+        let mesh = meshes.add(Circle::new(radius));
 
         if let Some(&entity) = entity_map.units.get(&unit.id) {
             commands.entity(entity).insert((
                 Transform::from_xyz(p.x, p.y, 2.0),
-                Sprite {
-                    color: player_color(unit.player_slot),
-                    custom_size: Some(size),
-                    ..default()
-                },
+                Mesh2d(mesh),
+                MeshMaterial2d(mat),
             ));
         } else {
             let entity = commands
                 .spawn((
-                    Sprite {
-                        color: player_color(unit.player_slot),
-                        custom_size: Some(size),
-                        ..default()
-                    },
+                    Mesh2d(mesh),
+                    MeshMaterial2d(mat),
                     Transform::from_xyz(p.x, p.y, 2.0),
                     UnitMarker(unit.id.clone()),
                 ))
@@ -216,24 +218,27 @@ fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut E
     });
 }
 
-fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_buildings(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for building in &state.buildings {
         seen.insert(building.id.clone());
         let p = hex_to_pixel(building.x, building.y);
         let pos = Transform::from_xyz(p.x, p.y, 1.0);
-        let sprite = Sprite {
-            color: player_color(building.player_slot),
-            custom_size: Some(Vec2::splat(HEX_SIZE * 1.6)),
-            ..default()
-        };
+        let mat = materials.add(ColorMaterial::from_color(player_color(building.player_slot)));
+        let mesh = meshes.add(RegularPolygon::new(HEX_SIZE * 0.75, 6));
 
         if let Some(&entity) = entity_map.buildings.get(&building.id) {
-            commands.entity(entity).insert((pos, sprite));
+            commands.entity(entity).insert((pos, Mesh2d(mesh), MeshMaterial2d(mat)));
         } else {
             let entity = commands
-                .spawn((sprite, pos, BuildingMarker(building.id.clone())))
+                .spawn((Mesh2d(mesh), MeshMaterial2d(mat), pos, BuildingMarker(building.id.clone())))
                 .id();
             entity_map.buildings.insert(building.id.clone(), entity);
         }
@@ -249,7 +254,13 @@ fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &m
     });
 }
 
-fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_resources(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<ColorMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for resource in &state.resources {
@@ -258,17 +269,14 @@ fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &m
         let color = Color::srgb(brightness, brightness * 0.9, 0.1);
         let p = hex_to_pixel(resource.x, resource.y);
         let pos = Transform::from_xyz(p.x, p.y, 1.5);
-        let sprite = Sprite {
-            color,
-            custom_size: Some(Vec2::splat(HEX_SIZE * 0.8)),
-            ..default()
-        };
+        let mat = materials.add(ColorMaterial::from_color(color));
+        let mesh = meshes.add(RegularPolygon::new(HEX_SIZE * 0.4, 6));
 
         if let Some(&entity) = entity_map.resources.get(&resource.id) {
-            commands.entity(entity).insert((pos, sprite));
+            commands.entity(entity).insert((pos, Mesh2d(mesh), MeshMaterial2d(mat)));
         } else {
             let entity = commands
-                .spawn((sprite, pos, ResourceMarker(resource.id.clone())))
+                .spawn((Mesh2d(mesh), MeshMaterial2d(mat), pos, ResourceMarker(resource.id.clone())))
                 .id();
             entity_map.resources.insert(resource.id.clone(), entity);
         }
