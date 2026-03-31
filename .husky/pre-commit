@@ -1,5 +1,8 @@
 #!/bin/sh
 
+# Ensure cargo is available (rustup installs to ~/.cargo/bin)
+[ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+
 # Run lint-staged for backend and frontend (only if relevant files changed)
 npx lint-staged
 
