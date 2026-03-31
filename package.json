@@ -1,0 +1,23 @@
+{
+  "name": "battleform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI-vs-AI Real-Time Strategy Arena",
+  "scripts": {
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7",
+    "lint-staged": "^16.4.0"
+  },
+  "lint-staged": {
+    "backend/**/*.{ts,tsx}": [
+      "bash -c 'cd backend && npm run lint -- --no-error-on-unmatched-pattern'",
+      "bash -c 'cd backend && npm run typecheck'"
+    ],
+    "frontend/**/*.{ts,tsx,vue}": [
+      "bash -c 'cd frontend && npm run lint -- --no-error-on-unmatched-pattern'",
+      "bash -c 'cd frontend && npm run typecheck'"
+    ]
+  }
+}

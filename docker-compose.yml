@@ -1,0 +1,55 @@
+name: Battleform
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: battleform
+      POSTGRES_USER: battleform
+      POSTGRES_PASSWORD: battleform
+    ports:
+      - "5444:5432"
+    volumes:
+      - battleform_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U battleform -d battleform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6385:6379"
+    volumes:
+      - battleform_redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:4.2
+    environment:
+      SERVICES: s3,sqs
+      DEBUG: 1
+      LOCALSTACK_API_KEY: ${LOCALSTACK_API_KEY:-}
+      PERSISTENCE: 1
+    ports:
+      - "4569:4566"
+    volumes:
+      - battleform_localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  battleform_postgres_data:
+  battleform_redis_data:
+  battleform_localstack_data:
