@@ -1,6 +1,7 @@
 const g = window as unknown as Record<string, unknown>
 function getPushDiff(): ((data: Uint8Array) => void) | null { return (g.__bf_pushDiff as ((data: Uint8Array) => void)) ?? null }
 function getPushSnapshot(): ((data: Uint8Array) => void) | null { return (g.__bf_pushSnapshot as ((data: Uint8Array) => void)) ?? null }
+function getGetTileInfo(): ((x: number, y: number) => string) | null { return (g.__bf_getTileInfo as ((x: number, y: number) => string)) ?? null }
 function isBevyStarted(): boolean { return g.__bf_bevyStarted === true }
 
 export class GameBridge {
@@ -18,10 +19,12 @@ export class GameBridge {
       const wasm = (await Function('return import("/pkg/battleform_renderer.js")')()) as {
         default: () => Promise<void>; push_state_diff: (data: Uint8Array) => void
         push_full_state: (data: Uint8Array) => void; start: () => void
+        get_tile_info: (x: number, y: number) => string
       }
       await wasm.default()
       g.__bf_pushDiff = wasm.push_state_diff
       g.__bf_pushSnapshot = wasm.push_full_state
+      g.__bf_getTileInfo = wasm.get_tile_info
       if (!isBevyStarted()) { console.log('[bridge] Starting Bevy app'); wasm.start(); g.__bf_bevyStarted = true }
       this.initialized = true
       return true
@@ -45,6 +48,12 @@ export class GameBridge {
       if (this.onStateUpdate) this.onStateUpdate(event.data as ArrayBuffer)
     }
     this.ws.onclose = () => console.log('[bridge] WebSocket closed')
+  }
+
+  getTileInfo(screenX: number, screenY: number): string {
+    const fn = getGetTileInfo()
+    if (!fn || !this.initialized) return ''
+    return fn(screenX, screenY)
   }
 
   disconnect(): void { if (this.ws) { this.ws.close(); this.ws = null } }
