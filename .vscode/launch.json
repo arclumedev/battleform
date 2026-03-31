@@ -60,8 +60,7 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "skipFiles": ["<node_internals>/**"],
-      "console": "internalConsole",
-      "preLaunchTask": "Client: Build WASM (Dev)"
+      "console": "internalConsole"
     },
     {
       "name": "Frontend: Chrome Debug",

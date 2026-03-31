@@ -96,10 +96,31 @@ fn drain_pending_updates(mut state: ResMut<GameStateView>) {
     // Process full snapshots first
     if let Ok(mut snapshots) = PENDING_SNAPSHOTS.lock() {
         for data in snapshots.drain(..) {
-            if let Ok(new_state) = rmp_serde::from_slice::<GameStateView>(&data) {
-                *state = new_state;
-            } else if let Ok(new_state) = serde_json::from_slice::<GameStateView>(&data) {
-                *state = new_state;
+            match rmp_serde::from_slice::<GameStateView>(&data) {
+                Ok(new_state) => {
+                    web_sys::console::log_1(&format!(
+                        "[wasm] Snapshot: {}x{}, {} terrain rows, {} units, {} buildings",
+                        new_state.map_width, new_state.map_height,
+                        new_state.terrain.len(), new_state.units.len(), new_state.buildings.len()
+                    ).into());
+                    *state = new_state;
+                }
+                Err(e) => {
+                    web_sys::console::warn_1(&format!("[wasm] MsgPack failed: {:?}", e).into());
+                    match serde_json::from_slice::<GameStateView>(&data) {
+                        Ok(new_state) => {
+                            web_sys::console::log_1(&format!(
+                                "[wasm] JSON snapshot: {}x{}", new_state.map_width, new_state.map_height
+                            ).into());
+                            *state = new_state;
+                        }
+                        Err(e2) => {
+                            web_sys::console::error_1(&format!(
+                                "[wasm] Both failed. MsgPack: {:?}, JSON: {:?}", e, e2
+                            ).into());
+                        }
+                    }
+                }
             }
         }
     }

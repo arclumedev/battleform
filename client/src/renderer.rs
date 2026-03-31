@@ -392,6 +392,7 @@ pub fn camera_controls(
     windows: Query<&Window>,
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
     time: Res<Time>,
+    mut last_cursor: Local<Option<Vec2>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -400,8 +401,14 @@ pub fn camera_controls(
         return;
     };
 
+    let cam_scale = if let Projection::Orthographic(ref ortho) = *projection {
+        ortho.scale
+    } else {
+        1.0
+    };
+
     // Keyboard pan (WASD + arrow keys)
-    let speed = 200.0 * time.delta_secs();
+    let speed = 200.0 * cam_scale * time.delta_secs();
     let mut move_dir = Vec2::ZERO;
 
     if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
@@ -431,14 +438,25 @@ pub fn camera_controls(
         }
     }
 
-    // Right-click drag pan
-    if mouse_button.pressed(MouseButton::Right) {
-        if let Some(cursor) = window.cursor_position() {
-            let center = Vec2::new(window.width() / 2.0, window.height() / 2.0);
-            let delta = (cursor - center) * 0.02;
-            transform.translation.x += delta.x;
-            transform.translation.y -= delta.y;
+    // Mouse drag pan (any button)
+    let dragging = mouse_button.pressed(MouseButton::Left)
+        || mouse_button.pressed(MouseButton::Middle)
+        || mouse_button.pressed(MouseButton::Right);
+
+    if let Some(cursor) = window.cursor_position() {
+        if dragging {
+            if let Some(last) = *last_cursor {
+                let delta = cursor - last;
+                // Screen pixels to world units, accounting for zoom
+                transform.translation.x -= delta.x * cam_scale;
+                transform.translation.y += delta.y * cam_scale;
+            }
         }
+        *last_cursor = Some(cursor);
+    }
+
+    if !dragging {
+        *last_cursor = None;
     }
 }
 
