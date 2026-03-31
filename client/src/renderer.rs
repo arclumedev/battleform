@@ -7,28 +7,42 @@ use crate::EntityMap;
 const HEX_SIZE: f32 = 12.0;
 const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
-const ISO_Y_SCALE: f32 = 0.5; // Vertical squish (isometric foreshortening)
-const ISO_SHEAR: f32 = 0.45; // Horizontal shear (Civ-style angle)
 
-/// Convert hex grid (col, row) to Civ-style isometric pixel coordinates.
-/// Applies: 1) standard hex layout, 2) Y squish, 3) horizontal shear.
+/// Isometric rotation angle in radians (~25 degrees).
+/// This tilts the entire grid to give the Civ-style perspective.
+const ISO_ANGLE: f32 = 0.44; // ~25 degrees
+const ISO_Y_SQUISH: f32 = 0.58; // Foreshortening
+
+/// Convert hex grid (col, row) to isometric pixel coordinates.
+/// 1) Standard flat hex layout
+/// 2) Rotate by ISO_ANGLE
+/// 3) Squish Y for foreshortening
 fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
     let flat_x = col as f32 * HEX_WIDTH + offset;
     let flat_y = -(row as f32 * HEX_HEIGHT * 0.75);
 
-    // Isometric transform: squish Y, then shear X based on Y
-    let iso_y = flat_y * ISO_Y_SCALE;
-    let iso_x = flat_x + flat_y * ISO_SHEAR;
-    Vec2::new(iso_x, iso_y)
+    // Rotate
+    let cos_a = ISO_ANGLE.cos();
+    let sin_a = ISO_ANGLE.sin();
+    let rx = flat_x * cos_a - flat_y * sin_a;
+    let ry = flat_x * sin_a + flat_y * cos_a;
+
+    // Squish Y for isometric foreshortening
+    Vec2::new(rx, ry * ISO_Y_SQUISH)
 }
 
 /// Convert world pixel coordinates back to the nearest hex grid (col, row).
 fn pixel_to_hex(world: Vec2) -> (i32, i32) {
-    // Reverse: un-shear, un-squish, then standard hex lookup
-    let iso_y = world.y;
-    let flat_y = iso_y / ISO_Y_SCALE;
-    let flat_x = world.x - flat_y * ISO_SHEAR;
+    // Reverse squish
+    let ry = world.y / ISO_Y_SQUISH;
+    let rx = world.x;
+
+    // Reverse rotation
+    let cos_a = ISO_ANGLE.cos();
+    let sin_a = ISO_ANGLE.sin();
+    let flat_x = rx * cos_a + ry * sin_a;
+    let flat_y = -rx * sin_a + ry * cos_a;
 
     let row = (-flat_y / (HEX_HEIGHT * 0.75)).round() as i32;
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
@@ -141,7 +155,8 @@ fn spawn_terrain(
                 Mesh2d(hex_mesh.clone()),
                 MeshMaterial2d(mat),
                 Transform::from_xyz(pos.x, pos.y, 0.0)
-                    .with_scale(Vec3::new(1.0, ISO_Y_SCALE, 1.0)),
+                    .with_rotation(Quat::from_rotation_z(ISO_ANGLE))
+                    .with_scale(Vec3::new(1.0, ISO_Y_SQUISH, 1.0)),
                 TerrainTile,
             ));
         }
@@ -159,7 +174,7 @@ fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut E
             UnitType::Soldier => HEX_SIZE * 1.3,
             UnitType::Scout => HEX_SIZE,
         };
-        let size = Vec2::new(s, s * ISO_Y_SCALE);
+        let size = Vec2::new(s, s * ISO_Y_SQUISH);
         let p = hex_to_pixel(unit.x, unit.y);
 
         if let Some(&entity) = entity_map.units.get(&unit.id) {
@@ -206,7 +221,7 @@ fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &m
         let pos = Transform::from_xyz(p.x, p.y, 1.0);
         let sprite = Sprite {
             color: player_color(building.player_slot),
-            custom_size: Some(Vec2::new(HEX_SIZE * 1.6, HEX_SIZE * 1.6 * ISO_Y_SCALE)),
+            custom_size: Some(Vec2::new(HEX_SIZE * 1.6, HEX_SIZE * 1.6 * ISO_Y_SQUISH)),
             ..default()
         };
 
@@ -241,7 +256,7 @@ fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &m
         let pos = Transform::from_xyz(p.x, p.y, 1.5);
         let sprite = Sprite {
             color,
-            custom_size: Some(Vec2::new(HEX_SIZE * 0.8, HEX_SIZE * 0.8 * ISO_Y_SCALE)),
+            custom_size: Some(Vec2::new(HEX_SIZE * 0.8, HEX_SIZE * 0.8 * ISO_Y_SQUISH)),
             ..default()
         };
 
@@ -298,7 +313,8 @@ fn sync_fog(
                         Mesh2d(hex_mesh.clone()),
                         MeshMaterial2d(mat),
                         Transform::from_xyz(p.x, p.y, 5.0)
-                            .with_scale(Vec3::new(1.0, ISO_Y_SCALE, 1.0)),
+                            .with_rotation(Quat::from_rotation_z(ISO_ANGLE))
+                            .with_scale(Vec3::new(1.0, ISO_Y_SQUISH, 1.0)),
                         FogTile,
                     ))
                     .id();
