@@ -60,6 +60,7 @@ pub fn start() {
                 drain_pending_updates,
                 renderer::sync_entities,
                 renderer::camera_controls,
+                renderer::update_tooltip,
             )
                 .chain(),
         )

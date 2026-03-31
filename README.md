@@ -79,6 +79,10 @@ battleform/
 5. The Macroquad WASM renderer draws the battle in real time
 6. First to destroy the opponent's base wins
 
+## Built with ArcLume
+
+This project is built using [ArcLume](https://arclume.dev) for spec-driven development — story mapping, requirements management, and AI-assisted planning from design through implementation.
+
 ## License
 
 See [LICENSE](LICENSE).
