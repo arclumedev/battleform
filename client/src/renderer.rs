@@ -81,7 +81,7 @@ pub fn setup_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Projection::from(OrthographicProjection {
-            scale: 20.0,
+            scale: 5.0,
             ..OrthographicProjection::default_3d()
         }),
         Transform::from_xyz(cam_pos.x, cam_pos.y, cam_pos.z)
@@ -155,7 +155,7 @@ fn spawn_terrain(
     .into_iter()
     .map(|t| {
         let key = format!("{:?}", t);
-        let mat = materials.add(StandardMaterial {
+        let mat = materials.add(StandardMaterial { unlit: true,
             base_color: tile_color(&t),
             perceptual_roughness: 0.9,
             metallic: 0.0,
@@ -165,7 +165,7 @@ fn spawn_terrain(
     })
     .collect();
 
-    let default_mat = materials.add(StandardMaterial {
+    let default_mat = materials.add(StandardMaterial { unlit: true,
         base_color: tile_color(&TileType::Grass),
         ..default()
     });
@@ -240,7 +240,7 @@ fn sync_units(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Capsule3d::new(radius, unit_height));
-            let mat = materials.add(StandardMaterial {
+            let mat = materials.add(StandardMaterial { unlit: true,
                 base_color: player_color(unit.player_slot),
                 perceptual_roughness: 0.5,
                 metallic: 0.2,
@@ -299,7 +299,7 @@ fn sync_buildings(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Cuboid::new(building_w, building_h, building_w));
-            let mat = materials.add(StandardMaterial {
+            let mat = materials.add(StandardMaterial { unlit: true,
                 base_color: player_color(building.player_slot),
                 perceptual_roughness: 0.6,
                 metallic: 0.1,
@@ -356,7 +356,7 @@ fn sync_resources(
                 .insert(Transform::from_xyz(p.x, terrain_h + 0.2, p.y));
         } else {
             let mesh = meshes.add(Sphere::new(HEX_SIZE * 0.2));
-            let mat = materials.add(StandardMaterial {
+            let mat = materials.add(StandardMaterial { unlit: true,
                 base_color: Color::srgb(brightness, brightness * 0.9, 0.1),
                 emissive: LinearRgba::new(brightness * 0.3, brightness * 0.25, 0.0, 1.0),
                 perceptual_roughness: 0.3,
