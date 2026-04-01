@@ -6,15 +6,19 @@ use crate::state::*;
 use crate::EntityMap;
 
 const HEX_SIZE: f32 = 2.0;
-const HEX_WIDTH: f32 = HEX_SIZE * 1.732;
-const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
+// Pointy-top hex (default RegularPolygon orientation):
+// width = sqrt(3) * size, height = 2 * size
+const HEX_W: f32 = HEX_SIZE * 1.732;
+const HEX_H: f32 = HEX_SIZE * 2.0;
 
-/// Convert hex grid (col, row) to flat world coordinates.
+/// Convert hex grid (col, row) using pointy-top odd-r offset layout.
+/// This matches the default orientation of Bevy's RegularPolygon(6).
+/// Odd rows shift right by half a hex width.
 fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
-    let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
-    let px = col as f32 * HEX_WIDTH + offset;
-    let py = -(row as f32 * HEX_HEIGHT * 0.75);
-    Vec2::new(px, py)
+    let offset = if row % 2 != 0 { HEX_W * 0.5 } else { 0.0 };
+    let px = col as f32 * HEX_W + offset;
+    let pz = -(row as f32 * HEX_H * 0.75);
+    Vec2::new(px, pz)
 }
 
 const PLAYER_COLORS: [Color; 8] = [
@@ -184,8 +188,7 @@ fn spawn_terrain(
             commands.spawn((
                 Mesh3d(hex_mesh),
                 MeshMaterial3d(mat),
-                Transform::from_xyz(pos.x, height * 0.5, pos.y)
-                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_6)),
+                Transform::from_xyz(pos.x, height * 0.5, pos.y),
                 TerrainTile,
             ));
         }
