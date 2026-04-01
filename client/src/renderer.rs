@@ -1,5 +1,6 @@
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy::render::camera::ScalingMode;
 
 use crate::state::*;
 use crate::EntityMap;
@@ -75,38 +76,36 @@ pub fn setup_camera(mut commands: Commands) {
     // center.x ~ 27.7, center.y ~ -24.0
     // In 3D: X = center.x, Y = up, Z = center.y (depth)
     let look_at = Vec3::new(center.x, 0.0, center.y);
-    let cam_pos = look_at + Vec3::new(40.0, 80.0, 40.0);
+    // Isometric-style camera: offset diagonally, looking at map center
+    let cam_pos = look_at + Vec3::new(50.0, 50.0, 50.0);
 
     web_sys::console::log_1(
-        &format!("[wasm] Camera: look_at={:?}, pos={:?}", look_at, cam_pos).into(),
+        &format!("[wasm] Camera: look_at={:?}, pos={:?}, map center hex=(16,16) -> pixel=({},{})",
+            look_at, cam_pos, center.x, center.y).into(),
     );
 
     commands.spawn((
         Camera3d::default(),
         Projection::from(OrthographicProjection {
-            scale: 40.0,
+            // How many world units fit vertically in the viewport
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: 80.0,
+            },
             ..OrthographicProjection::default_3d()
         }),
         Transform::from_xyz(cam_pos.x, cam_pos.y, cam_pos.z)
             .looking_at(look_at, Vec3::Y),
     ));
 
-    // Directional light (sun)
+    // Point light above the map
     commands.spawn((
-        DirectionalLight {
-            illuminance: 8000.0,
+        PointLight {
+            intensity: 2_000_000.0,
             shadows_enabled: false,
             ..default()
         },
-        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.3, 0.0)),
+        Transform::from_xyz(center.x, 30.0, center.y),
     ));
-
-    // Ambient light
-    commands.insert_resource(AmbientLight {
-        color: Color::WHITE,
-        brightness: 300.0,
-        affects_lightmapped_meshes: false,
-    });
 }
 
 // --- Entity Sync ---
@@ -408,7 +407,10 @@ pub fn camera_controls(
     };
 
     let cam_scale = if let Projection::Orthographic(ref ortho) = *projection {
-        ortho.scale
+        match ortho.scaling_mode {
+            ScalingMode::FixedVertical { viewport_height } => viewport_height,
+            _ => ortho.scale,
+        }
     } else {
         1.0
     };
@@ -440,7 +442,11 @@ pub fn camera_controls(
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *projection {
             let factor = if event.y > 0.0 { 0.9 } else { 1.1 };
-            ortho.scale = (ortho.scale * factor).clamp(5.0, 80.0);
+            if let ScalingMode::FixedVertical { ref mut viewport_height } = ortho.scaling_mode {
+                *viewport_height = (*viewport_height * factor).clamp(10.0, 150.0);
+            } else {
+                ortho.scale = (ortho.scale * factor).clamp(5.0, 80.0);
+            }
         }
     }
 
