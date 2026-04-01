@@ -1,4 +1,5 @@
 import type { GameState, Position } from './state.js'
+import { hexNeighbors, hexDistance } from './hex.js'
 
 interface AStarNode {
   x: number
@@ -9,19 +10,8 @@ interface AStarNode {
   parent: AStarNode | null
 }
 
-function heuristic(a: Position, b: Position): number {
-  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
-}
-
-const NEIGHBORS = [
-  { dx: 0, dy: -1 },
-  { dx: 0, dy: 1 },
-  { dx: -1, dy: 0 },
-  { dx: 1, dy: 0 },
-]
-
 /**
- * A* pathfinding on the game grid.
+ * A* pathfinding on a hex grid (odd-r offset coordinates).
  * Returns array of positions from start (exclusive) to end (inclusive).
  * Returns empty array if no path found.
  */
@@ -33,18 +23,18 @@ export function findPath(state: GameState, start: Position, end: Position): Posi
   const closedSet = new Set<string>()
 
   const key = (x: number, y: number) => `${x},${y}`
+  const h0 = hexDistance(start, end)
 
   openSet.push({
     x: start.x,
     y: start.y,
     g: 0,
-    h: heuristic(start, end),
-    f: heuristic(start, end),
+    h: h0,
+    f: h0,
     parent: null,
   })
 
   while (openSet.length > 0) {
-    // Find node with lowest f
     let lowestIdx = 0
     for (let i = 1; i < openSet.length; i++) {
       if (openSet[i].f < openSet[lowestIdx].f) {
@@ -55,7 +45,6 @@ export function findPath(state: GameState, start: Position, end: Position): Posi
     const current = openSet[lowestIdx]
 
     if (current.x === end.x && current.y === end.y) {
-      // Reconstruct path (exclude start)
       const path: Position[] = []
       let node: AStarNode | null = current
       while (node && !(node.x === start.x && node.y === start.y)) {
@@ -68,16 +57,16 @@ export function findPath(state: GameState, start: Position, end: Position): Posi
     openSet.splice(lowestIdx, 1)
     closedSet.add(key(current.x, current.y))
 
-    for (const { dx, dy } of NEIGHBORS) {
-      const nx = current.x + dx
-      const ny = current.y + dy
-      const nKey = key(nx, ny)
+    for (const neighbor of hexNeighbors({ x: current.x, y: current.y })) {
+      const nKey = key(neighbor.x, neighbor.y)
 
       if (closedSet.has(nKey)) continue
-      if (state.isBlocked(nx, ny)) continue
+      if (state.isBlocked(neighbor.x, neighbor.y)) continue
 
-      const g = current.g + 1
-      const existing = openSet.find((n) => n.x === nx && n.y === ny)
+      const moveCost = state.getMovementCost(neighbor.x, neighbor.y)
+      if (moveCost === Infinity) continue
+      const g = current.g + moveCost
+      const existing = openSet.find((n) => n.x === neighbor.x && n.y === neighbor.y)
 
       if (existing) {
         if (g < existing.g) {
@@ -86,11 +75,11 @@ export function findPath(state: GameState, start: Position, end: Position): Posi
           existing.parent = current
         }
       } else {
-        const h = heuristic({ x: nx, y: ny }, end)
-        openSet.push({ x: nx, y: ny, g, h, f: g + h, parent: current })
+        const h = hexDistance(neighbor, end)
+        openSet.push({ x: neighbor.x, y: neighbor.y, g, h, f: g + h, parent: current })
       }
     }
   }
 
-  return [] // No path found
+  return []
 }

@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import { findPath } from './pathfinding.js'
+import { hexDistance } from './hex.js'
 import {
   type GameState,
   type GameCommand,
@@ -102,7 +103,7 @@ function executeHarvest(state: GameState, cmd: GameCommand): void {
   if (!resource || resource.remaining <= 0) return
 
   // Move to resource if not adjacent
-  const dist = Math.abs(unit.x - resource.x) + Math.abs(unit.y - resource.y)
+  const dist = hexDistance({ x: unit.x, y: unit.y }, { x: resource.x, y: resource.y })
   if (dist > 1) {
     const path = findPath(state, { x: unit.x, y: unit.y }, { x: resource.x, y: resource.y })
     if (path.length > 0) {
@@ -167,7 +168,7 @@ export function resolveCombat(state: GameState): CombatEvent[] {
     const targetBuilding = state.buildings.get(unit.targetId)
 
     if (targetUnit) {
-      const dist = Math.abs(unit.x - targetUnit.x) + Math.abs(unit.y - targetUnit.y)
+      const dist = hexDistance({ x: unit.x, y: unit.y }, { x: targetUnit.x, y: targetUnit.y })
 
       if (dist <= stats.range) {
         // In range — attack
@@ -191,7 +192,10 @@ export function resolveCombat(state: GameState): CombatEvent[] {
         }
       }
     } else if (targetBuilding) {
-      const dist = Math.abs(unit.x - targetBuilding.x) + Math.abs(unit.y - targetBuilding.y)
+      const dist = hexDistance(
+        { x: unit.x, y: unit.y },
+        { x: targetBuilding.x, y: targetBuilding.y }
+      )
 
       if (dist <= stats.range) {
         damageQueue.push({ targetId: unit.targetId, damage: stats.damage, isUnit: false })
@@ -275,7 +279,7 @@ export function resolveHarvesting(state: GameState): void {
         // At base — deposit
         const base = state.getPlayerBase(unit.playerSlot)
         if (base) {
-          const dist = Math.abs(unit.x - base.x) + Math.abs(unit.y - base.y)
+          const dist = hexDistance({ x: unit.x, y: unit.y }, { x: base.x, y: base.y })
           if (dist <= 1) {
             state.players[unit.playerSlot].energy += unit.cargo
             unit.cargo = 0

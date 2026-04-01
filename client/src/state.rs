@@ -8,7 +8,7 @@ pub struct GameStateView {
     pub map_width: u32,
     pub map_height: u32,
     #[serde(default)]
-    pub terrain: Vec<Vec<TileType>>,
+    pub terrain: Vec<Vec<Tile>>,
     #[serde(default)]
     pub units: Vec<UnitView>,
     #[serde(default)]
@@ -165,12 +165,30 @@ pub struct VisUpdate {
     pub state: VisibilityState,
 }
 
+/// A single tile in the terrain grid.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Tile {
+    #[serde(rename = "type")]
+    pub tile_type: TileType,
+    #[serde(default = "default_elevation")]
+    pub elevation: u8,
+}
+
+fn default_elevation() -> u8 {
+    1
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum TileType {
     #[default]
-    Open,
-    Blocked,
+    Grass,
+    Desert,
+    Forest,
+    Mountain,
+    WaterLake,
+    WaterSea,
+    Snow,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
@@ -208,4 +226,37 @@ pub enum VisibilityState {
     Unseen,
     PreviouslySeen,
     Visible,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_tile_json() {
+        let json = r#"{"type":"grass","elevation":1}"#;
+        let tile: Tile = serde_json::from_str(json).unwrap();
+        assert_eq!(tile.tile_type, TileType::Grass);
+        assert_eq!(tile.elevation, 1);
+    }
+
+    #[test]
+    fn test_tile_msgpack() {
+        // Simulate what msgpackr produces
+        let tile = Tile { tile_type: TileType::Desert, elevation: 2 };
+        let packed = rmp_serde::to_vec_named(&tile).unwrap();
+        let unpacked: Tile = rmp_serde::from_slice(&packed).unwrap();
+        assert_eq!(unpacked.tile_type, TileType::Desert);
+        assert_eq!(unpacked.elevation, 2);
+    }
+
+    #[test]
+    fn test_snapshot_json() {
+        let json = r#"{"tick":5,"mapWidth":2,"mapHeight":2,"terrain":[[{"type":"grass","elevation":1}],[{"type":"mountain","elevation":3}]],"units":[],"buildings":[],"resources":[],"combatEvents":[],"visibility":[]}"#;
+        let state: GameStateView = serde_json::from_str(json).unwrap();
+        assert_eq!(state.map_width, 2);
+        assert_eq!(state.terrain.len(), 2);
+        assert_eq!(state.terrain[0][0].tile_type, TileType::Grass);
+        assert_eq!(state.terrain[1][0].tile_type, TileType::Mountain);
+    }
 }

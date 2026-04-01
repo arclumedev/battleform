@@ -1,9 +1,8 @@
-import type { MapConfig } from './state.js'
+import type { MapConfig, TileType, Tile } from './state.js'
 
 /**
  * Generate a map config for the given number of players.
- * Start positions are placed symmetrically.
- * Resource nodes are scaled proportionally.
+ * Produces varied terrain with biomes, elevation, and symmetric start positions.
  */
 export function generateMapConfig(playerCount: number): MapConfig {
   const width = 32
@@ -11,14 +10,90 @@ export function generateMapConfig(playerCount: number): MapConfig {
 
   const startPositions = getStartPositions(playerCount, width, height)
   const resourceNodes = getResourceNodes(playerCount, width, height)
+  const terrain = generateTerrain(width, height, startPositions)
 
   return {
     width,
     height,
-    terrain: 'open',
+    terrain,
     startPositions,
     resourceNodes,
   }
+}
+
+/**
+ * Simple terrain generator using distance-from-center and pseudo-random noise.
+ * Creates a naturalistic map with water edges, mountains in the center-ish,
+ * and grass around start positions.
+ */
+function generateTerrain(
+  width: number,
+  height: number,
+  startPositions: { x: number; y: number }[]
+): Tile[][] {
+  const cx = width / 2
+  const cy = height / 2
+  const maxDist = Math.sqrt(cx * cx + cy * cy)
+
+  // Simple seeded pseudo-random (deterministic per position)
+  const noise = (x: number, y: number): number => {
+    const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453
+    return n - Math.floor(n)
+  }
+
+  const terrain: Tile[][] = []
+
+  for (let y = 0; y < height; y++) {
+    const row: Tile[] = []
+    for (let x = 0; x < width; x++) {
+      const distFromCenter = Math.sqrt((x - cx) ** 2 + (y - cy) ** 2) / maxDist
+      const distFromEdge = Math.min(x, y, width - 1 - x, height - 1 - y)
+      const n = noise(x, y)
+      const n2 = noise(x + 100, y + 100)
+
+      // Ensure start positions and their surroundings are grass
+      const nearStart = startPositions.some((s) => Math.abs(s.x - x) + Math.abs(s.y - y) <= 4)
+
+      let type: TileType
+      let elevation: number
+
+      if (nearStart) {
+        type = 'grass'
+        elevation = 1
+      } else if (distFromEdge <= 1) {
+        // Map border — water
+        type = 'water_sea'
+        elevation = 0
+      } else if (distFromEdge <= 3 && n < 0.4) {
+        type = 'water_lake'
+        elevation = 0
+      } else if (distFromCenter < 0.2 && n < 0.3) {
+        // Center region — some mountains
+        type = 'mountain'
+        elevation = 3
+      } else if (distFromCenter < 0.35 && n < 0.25) {
+        type = 'forest'
+        elevation = 2
+      } else if (n2 < 0.12) {
+        type = 'desert'
+        elevation = 1
+      } else if (n2 < 0.18) {
+        type = 'snow'
+        elevation = 2
+      } else if (n < 0.2) {
+        type = 'forest'
+        elevation = 1
+      } else {
+        type = 'grass'
+        elevation = 1
+      }
+
+      row.push({ type, elevation })
+    }
+    terrain.push(row)
+  }
+
+  return terrain
 }
 
 function getStartPositions(

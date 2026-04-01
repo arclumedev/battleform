@@ -1,10 +1,9 @@
 import type { GameState, VisibilityState } from './state.js'
 import { UNIT_STATS, BASE_STATS } from './state.js'
+import { hexesInRadius } from './hex.js'
 
 /**
- * Recompute fog of war for all players.
- * Marks tiles as 'visible' if within vision range of any owned unit/building.
- * Previously visible tiles become 'previously_seen'.
+ * Recompute fog of war for all players using hex radius.
  */
 export function computeFog(state: GameState): void {
   for (let slot = 0; slot < state.players.length; slot++) {
@@ -49,15 +48,9 @@ function markVisible(
   mapWidth: number,
   mapHeight: number
 ): void {
-  const r2 = radius * radius
-  for (let dy = -radius; dy <= radius; dy++) {
-    for (let dx = -radius; dx <= radius; dx++) {
-      if (dx * dx + dy * dy > r2) continue
-      const x = cx + dx
-      const y = cy + dy
-      if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
-        vis[y][x] = 'visible'
-      }
+  for (const pos of hexesInRadius({ x: cx, y: cy }, radius)) {
+    if (pos.x >= 0 && pos.x < mapWidth && pos.y >= 0 && pos.y < mapHeight) {
+      vis[pos.y][pos.x] = 'visible'
     }
   }
 }

@@ -1,5 +1,6 @@
 import type { GameState, GameCommand } from './state.js'
 import { UNIT_STATS } from './state.js'
+import { hexDistance } from './hex.js'
 
 /**
  * Simple bot AI that generates commands each tick.
@@ -26,8 +27,8 @@ export function generateBotCommands(state: GameState, botSlot: number): GameComm
   // Find nearest resource node with energy
   const resources = [...state.resources.values()].filter((r) => r.remaining > 0)
   const nearestResource = resources.sort((a, b) => {
-    const distA = Math.abs(a.x - base.x) + Math.abs(a.y - base.y)
-    const distB = Math.abs(b.x - base.x) + Math.abs(b.y - base.y)
+    const distA = hexDistance(a, base)
+    const distB = hexDistance(b, base)
     return distA - distB
   })[0]
 
@@ -98,8 +99,8 @@ export function generateBotCommands(state: GameState, botSlot: number): GameComm
   const enemyStartPositions = state.mapConfig.startPositions
     .filter((_, i) => i !== botSlot)
     .sort((a, b) => {
-      const distA = Math.abs(a.x - base.x) + Math.abs(a.y - base.y)
-      const distB = Math.abs(b.x - base.x) + Math.abs(b.y - base.y)
+      const distA = hexDistance(a, base)
+      const distB = hexDistance(b, base)
       return distA - distB
     })
   const enemyStartPos = enemyStartPositions[0] ?? { x: 16, y: 16 }
@@ -108,8 +109,8 @@ export function generateBotCommands(state: GameState, botSlot: number): GameComm
   const nearestEnemyBase = enemyBuildings
     .filter((b) => b.buildingType === 'base')
     .sort((a, b) => {
-      const distA = Math.abs(a.x - base.x) + Math.abs(a.y - base.y)
-      const distB = Math.abs(b.x - base.x) + Math.abs(b.y - base.y)
+      const distA = hexDistance(a, base)
+      const distB = hexDistance(b, base)
       return distA - distB
     })[0]
 
@@ -142,13 +143,13 @@ export function generateBotCommands(state: GameState, botSlot: number): GameComm
   for (const soldier of idleSoldiers) {
     // Priority: attack nearby enemies, then enemy base
     const nearbyEnemy = enemyUnits.sort((a, b) => {
-      const distA = Math.abs(a.x - soldier.x) + Math.abs(a.y - soldier.y)
-      const distB = Math.abs(b.x - soldier.x) + Math.abs(b.y - soldier.y)
+      const distA = hexDistance(a, soldier)
+      const distB = hexDistance(b, soldier)
       return distA - distB
     })[0]
 
     if (nearbyEnemy) {
-      const dist = Math.abs(nearbyEnemy.x - soldier.x) + Math.abs(nearbyEnemy.y - soldier.y)
+      const dist = hexDistance(nearbyEnemy, soldier)
       if (dist < 10) {
         commands.push({
           playerSlot: botSlot,

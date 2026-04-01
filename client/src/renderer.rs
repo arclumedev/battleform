@@ -1,10 +1,25 @@
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
+use bevy::render::camera::ScalingMode;
 
 use crate::state::*;
 use crate::EntityMap;
 
-const TILE_SIZE: f32 = 20.0;
+const HEX_SIZE: f32 = 2.0;
+// Pointy-top hex (default RegularPolygon orientation):
+// width = sqrt(3) * size, height = 2 * size
+const HEX_W: f32 = HEX_SIZE * 1.732;
+const HEX_H: f32 = HEX_SIZE * 2.0;
+
+/// Convert hex grid (col, row) using pointy-top odd-r offset layout.
+/// This matches the default orientation of Bevy's RegularPolygon(6).
+/// Odd rows shift right by half a hex width.
+fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
+    let offset = if row % 2 != 0 { HEX_W * 0.5 } else { 0.0 };
+    let px = col as f32 * HEX_W + offset;
+    let pz = -(row as f32 * HEX_H * 0.75);
+    Vec2::new(px, pz)
+}
 
 const PLAYER_COLORS: [Color; 8] = [
     Color::srgb(0.23, 0.51, 0.96),
@@ -18,11 +33,33 @@ const PLAYER_COLORS: [Color; 8] = [
 ];
 
 fn player_color(slot: u8) -> Color {
-    PLAYER_COLORS
-        .get(slot as usize)
-        .copied()
-        .unwrap_or(Color::WHITE)
+    PLAYER_COLORS.get(slot as usize).copied().unwrap_or(Color::WHITE)
 }
+
+fn tile_color(tile_type: &TileType) -> Color {
+    match tile_type {
+        TileType::Grass => Color::srgb(0.35, 0.55, 0.25),
+        TileType::Desert => Color::srgb(0.72, 0.62, 0.38),
+        TileType::Forest => Color::srgb(0.18, 0.40, 0.15),
+        TileType::Mountain => Color::srgb(0.50, 0.48, 0.45),
+        TileType::WaterLake => Color::srgb(0.25, 0.45, 0.65),
+        TileType::WaterSea => Color::srgb(0.15, 0.32, 0.55),
+        TileType::Snow => Color::srgb(0.82, 0.84, 0.88),
+    }
+}
+
+fn tile_height(tile_type: &TileType, elevation: u8) -> f32 {
+    let base = match tile_type {
+        TileType::WaterLake | TileType::WaterSea => 0.05,
+        TileType::Grass | TileType::Desert => 0.15,
+        TileType::Forest => 0.25,
+        TileType::Snow => 0.3,
+        TileType::Mountain => 0.6,
+    };
+    base + elevation as f32 * 0.1
+}
+
+// --- Components ---
 
 #[derive(Component)]
 pub struct UnitMarker(#[allow(dead_code)] pub String);
@@ -34,99 +71,203 @@ pub struct BuildingMarker(#[allow(dead_code)] pub String);
 pub struct ResourceMarker(#[allow(dead_code)] pub String);
 
 #[derive(Component)]
-pub struct FogTile;
-
-#[derive(Component)]
 pub struct TerrainTile;
 
+// --- Setup ---
+
 pub fn setup_camera(mut commands: Commands) {
-    let center_x = 16.0 * TILE_SIZE;
-    let center_y = -16.0 * TILE_SIZE;
+    let center = hex_to_pixel(16, 16);
+    // center.x ~ 27.7, center.y ~ -24.0
+    // In 3D: X = center.x, Y = up, Z = center.y (depth)
+    let look_at = Vec3::new(center.x, 0.0, center.y);
+    // Isometric-style camera: offset diagonally, looking at map center
+    let cam_pos = look_at + Vec3::new(50.0, 50.0, 50.0);
+
+    web_sys::console::log_1(
+        &format!("[wasm] Camera: look_at={:?}, pos={:?}, map center hex=(16,16) -> pixel=({},{})",
+            look_at, cam_pos, center.x, center.y).into(),
+    );
+
     commands.spawn((
-        Camera2d,
-        Transform::from_xyz(center_x, center_y, 999.0),
+        Camera3d::default(),
+        Projection::from(OrthographicProjection {
+            // How many world units fit vertically in the viewport
+            scaling_mode: ScalingMode::FixedVertical {
+                viewport_height: 80.0,
+            },
+            ..OrthographicProjection::default_3d()
+        }),
+        Transform::from_xyz(cam_pos.x, cam_pos.y, cam_pos.z)
+            .looking_at(look_at, Vec3::Y),
     ));
+
+    // Multiple point lights spread across the map for even illumination
+    let offsets = [
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(20.0, 0.0, 0.0),
+        Vec3::new(-20.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 20.0),
+        Vec3::new(0.0, 0.0, -20.0),
+    ];
+    for offset in offsets {
+        commands.spawn((
+            PointLight {
+                intensity: 3_000_000.0,
+                range: 80.0,
+                ..default()
+            },
+            Transform::from_xyz(
+                look_at.x + offset.x,
+                25.0,
+                look_at.z + offset.z,
+            ),
+        ));
+    }
 }
+
+// --- Entity Sync ---
 
 pub fn sync_entities(
     mut commands: Commands,
     state: Res<GameStateView>,
     mut entity_map: ResMut<EntityMap>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     if state.map_width == 0 || state.map_height == 0 {
         return;
     }
 
     if !entity_map.terrain_spawned {
-        spawn_terrain(&mut commands, &state, &mut entity_map);
+        web_sys::console::log_1(
+            &format!(
+                "[wasm] Spawning 3D terrain: {}x{}, {} rows",
+                state.map_width, state.map_height, state.terrain.len()
+            )
+            .into(),
+        );
+        spawn_terrain(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
     }
 
-    sync_units(&mut commands, &state, &mut entity_map);
-    sync_buildings(&mut commands, &state, &mut entity_map);
-    sync_resources(&mut commands, &state, &mut entity_map);
-    sync_fog(&mut commands, &state, &mut entity_map);
+    sync_units(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
+    sync_buildings(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
+    sync_resources(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
 }
 
-fn spawn_terrain(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn spawn_terrain(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
+    // Pre-create materials for each tile type
+    let tile_mats: std::collections::HashMap<String, Handle<StandardMaterial>> = [
+        TileType::Grass,
+        TileType::Desert,
+        TileType::Forest,
+        TileType::Mountain,
+        TileType::WaterLake,
+        TileType::WaterSea,
+        TileType::Snow,
+    ]
+    .into_iter()
+    .map(|t| {
+        let key = format!("{:?}", t);
+        let mat = materials.add(tile_color(&t));
+        (key, mat)
+    })
+    .collect();
+
+    let default_mat = materials.add(tile_color(&TileType::Grass));
+
     for y in 0..state.map_height {
         for x in 0..state.map_width {
-            let color = state
+            let tile = state
                 .terrain
                 .get(y as usize)
-                .and_then(|row| row.get(x as usize))
-                .map(|tile| match tile {
-                    TileType::Blocked => Color::srgb(0.3, 0.25, 0.2),
-                    TileType::Open => Color::srgb(0.15, 0.2, 0.15),
-                })
-                .unwrap_or(Color::srgb(0.15, 0.2, 0.15));
+                .and_then(|row| row.get(x as usize));
+
+            let tile_type = tile.map(|t| &t.tile_type).unwrap_or(&TileType::Grass);
+            let elevation = tile.map(|t| t.elevation).unwrap_or(1);
+
+            let pos = hex_to_pixel(x as i32, y as i32);
+            let height = tile_height(tile_type, elevation);
+            let key = format!("{:?}", tile_type);
+            let mat = tile_mats.get(&key).cloned().unwrap_or(default_mat.clone());
+
+            // Log first few tiles for debugging
+            if x < 3 && y < 3 {
+                web_sys::console::log_1(
+                    &format!(
+                        "[hex] ({},{}) -> world({:.2}, {:.2}) size={} w={:.2} h={:.2}",
+                        x, y, pos.x, pos.y, HEX_SIZE, HEX_W, HEX_H
+                    ).into(),
+                );
+            }
+
+            let hex_mesh = meshes.add(Extrusion::new(RegularPolygon::new(HEX_SIZE - 0.02, 6), height));
 
             commands.spawn((
-                Sprite {
-                    color,
-                    custom_size: Some(Vec2::new(TILE_SIZE - 1.0, TILE_SIZE - 1.0)),
-                    ..default()
-                },
-                Transform::from_xyz(x as f32 * TILE_SIZE, -(y as f32 * TILE_SIZE), 0.0),
+                Mesh3d(hex_mesh),
+                MeshMaterial3d(mat),
+                Transform::from_xyz(pos.x, height * 0.5, pos.y)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
                 TerrainTile,
             ));
         }
     }
     entity_map.terrain_spawned = true;
+    web_sys::console::log_1(&"[wasm] 3D terrain spawned!".into());
 }
 
-fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_units(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for unit in &state.units {
         seen.insert(unit.id.clone());
-        let size = match unit.unit_type {
-            UnitType::Worker => Vec2::splat(TILE_SIZE * 0.5),
-            UnitType::Soldier => Vec2::splat(TILE_SIZE * 0.8),
-            UnitType::Scout => Vec2::splat(TILE_SIZE * 0.6),
+
+        let radius = match unit.unit_type {
+            UnitType::Worker => HEX_SIZE * 0.25,
+            UnitType::Soldier => HEX_SIZE * 0.35,
+            UnitType::Scout => HEX_SIZE * 0.28,
+        };
+        let unit_height = match unit.unit_type {
+            UnitType::Worker => 0.3,
+            UnitType::Soldier => 0.5,
+            UnitType::Scout => 0.4,
         };
 
+        let p = hex_to_pixel(unit.x, unit.y);
+        // Place unit on top of the terrain
+        let terrain_h = state
+            .terrain
+            .get(unit.y as usize)
+            .and_then(|row| row.get(unit.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
+        let y_pos = terrain_h + unit_height * 0.5;
+
         if let Some(&entity) = entity_map.units.get(&unit.id) {
-            commands.entity(entity).insert((
-                Transform::from_xyz(unit.x as f32 * TILE_SIZE, -(unit.y as f32 * TILE_SIZE), 2.0),
-                Sprite {
-                    color: player_color(unit.player_slot),
-                    custom_size: Some(size),
-                    ..default()
-                },
-            ));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
+            let mesh = meshes.add(Capsule3d::new(radius, unit_height));
+            let mat = materials.add(player_color(unit.player_slot));
+
             let entity = commands
                 .spawn((
-                    Sprite {
-                        color: player_color(unit.player_slot),
-                        custom_size: Some(size),
-                        ..default()
-                    },
-                    Transform::from_xyz(
-                        unit.x as f32 * TILE_SIZE,
-                        -(unit.y as f32 * TILE_SIZE),
-                        2.0,
-                    ),
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, y_pos, p.y),
                     UnitMarker(unit.id.clone()),
                 ))
                 .id();
@@ -144,27 +285,45 @@ fn sync_units(commands: &mut Commands, state: &GameStateView, entity_map: &mut E
     });
 }
 
-fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_buildings(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for building in &state.buildings {
         seen.insert(building.id.clone());
-        let pos = Transform::from_xyz(
-            building.x as f32 * TILE_SIZE,
-            -(building.y as f32 * TILE_SIZE),
-            1.0,
-        );
-        let sprite = Sprite {
-            color: player_color(building.player_slot),
-            custom_size: Some(Vec2::splat(TILE_SIZE - 2.0)),
-            ..default()
-        };
+
+        let p = hex_to_pixel(building.x, building.y);
+        let terrain_h = state
+            .terrain
+            .get(building.y as usize)
+            .and_then(|row| row.get(building.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
+        let building_h = 1.2;
+        let building_w = HEX_SIZE * 0.6;
+        let y_pos = terrain_h + building_h * 0.5;
 
         if let Some(&entity) = entity_map.buildings.get(&building.id) {
-            commands.entity(entity).insert((pos, sprite));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
+            let mesh = meshes.add(Cuboid::new(building_w, building_h, building_w));
+            let mat = materials.add(player_color(building.player_slot));
+
             let entity = commands
-                .spawn((sprite, pos, BuildingMarker(building.id.clone())))
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, y_pos, p.y),
+                    BuildingMarker(building.id.clone()),
+                ))
                 .id();
             entity_map.buildings.insert(building.id.clone(), entity);
         }
@@ -180,29 +339,43 @@ fn sync_buildings(commands: &mut Commands, state: &GameStateView, entity_map: &m
     });
 }
 
-fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
+fn sync_resources(
+    commands: &mut Commands,
+    state: &GameStateView,
+    entity_map: &mut EntityMap,
+    meshes: &mut Assets<Mesh>,
+    materials: &mut Assets<StandardMaterial>,
+) {
     let mut seen = std::collections::HashSet::new();
 
     for resource in &state.resources {
         seen.insert(resource.id.clone());
+
+        let p = hex_to_pixel(resource.x, resource.y);
+        let terrain_h = state
+            .terrain
+            .get(resource.y as usize)
+            .and_then(|row| row.get(resource.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
         let brightness = (resource.remaining as f32 / 500.0).clamp(0.3, 1.0);
-        let color = Color::srgb(brightness, brightness * 0.9, 0.1);
-        let pos = Transform::from_xyz(
-            resource.x as f32 * TILE_SIZE,
-            -(resource.y as f32 * TILE_SIZE),
-            1.5,
-        );
-        let sprite = Sprite {
-            color,
-            custom_size: Some(Vec2::splat(TILE_SIZE * 0.6)),
-            ..default()
-        };
 
         if let Some(&entity) = entity_map.resources.get(&resource.id) {
-            commands.entity(entity).insert((pos, sprite));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, terrain_h + 0.2, p.y));
         } else {
+            let mesh = meshes.add(Sphere::new(HEX_SIZE * 0.2));
+            let mat = materials.add(Color::srgb(brightness, brightness * 0.9, 0.1));
+
             let entity = commands
-                .spawn((sprite, pos, ResourceMarker(resource.id.clone())))
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, terrain_h + 0.2, p.y),
+                    ResourceMarker(resource.id.clone()),
+                ))
                 .id();
             entity_map.resources.insert(resource.id.clone(), entity);
         }
@@ -218,70 +391,16 @@ fn sync_resources(commands: &mut Commands, state: &GameStateView, entity_map: &m
     });
 }
 
-fn sync_fog(commands: &mut Commands, state: &GameStateView, entity_map: &mut EntityMap) {
-    let rows = state.map_height as usize;
-    let cols = state.map_width as usize;
-
-    let needs_rebuild =
-        entity_map.fog_tiles.len() != rows || (rows > 0 && entity_map.fog_tiles[0].len() != cols);
-
-    if needs_rebuild {
-        for row in entity_map.fog_tiles.drain(..) {
-            for entity in row {
-                commands.entity(entity).despawn();
-            }
-        }
-
-        for y in 0..rows {
-            let mut row_entities = Vec::with_capacity(cols);
-            for x in 0..cols {
-                let alpha = fog_alpha(&state.visibility, x, y);
-                let entity = commands
-                    .spawn((
-                        Sprite {
-                            color: Color::srgba(0.0, 0.0, 0.0, alpha),
-                            custom_size: Some(Vec2::new(TILE_SIZE - 1.0, TILE_SIZE - 1.0)),
-                            ..default()
-                        },
-                        Transform::from_xyz(x as f32 * TILE_SIZE, -(y as f32 * TILE_SIZE), 5.0),
-                        FogTile,
-                    ))
-                    .id();
-                row_entities.push(entity);
-            }
-            entity_map.fog_tiles.push(row_entities);
-        }
-    } else {
-        for (y, row) in entity_map.fog_tiles.iter().enumerate() {
-            for (x, &entity) in row.iter().enumerate() {
-                let alpha = fog_alpha(&state.visibility, x, y);
-                commands.entity(entity).insert(Sprite {
-                    color: Color::srgba(0.0, 0.0, 0.0, alpha),
-                    custom_size: Some(Vec2::new(TILE_SIZE - 1.0, TILE_SIZE - 1.0)),
-                    ..default()
-                });
-            }
-        }
-    }
-}
-
-fn fog_alpha(visibility: &[Vec<VisibilityState>], x: usize, y: usize) -> f32 {
-    visibility
-        .get(y)
-        .and_then(|row| row.get(x))
-        .map(|vis| match vis {
-            VisibilityState::Unseen => 0.9,
-            VisibilityState::PreviouslySeen => 0.5,
-            VisibilityState::Visible => 0.0,
-        })
-        .unwrap_or(0.9)
-}
+// --- Camera Controls ---
 
 pub fn camera_controls(
+    keys: Res<ButtonInput<KeyCode>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut scroll_events: EventReader<MouseWheel>,
     windows: Query<&Window>,
-    mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    mut camera: Query<(&mut Transform, &mut Projection), With<Camera3d>>,
+    time: Res<Time>,
+    mut last_cursor: Local<Option<Vec2>>,
 ) {
     let Ok(window) = windows.single() else {
         return;
@@ -290,19 +409,68 @@ pub fn camera_controls(
         return;
     };
 
+    let cam_scale = if let Projection::Orthographic(ref ortho) = *projection {
+        match ortho.scaling_mode {
+            ScalingMode::FixedVertical { viewport_height } => viewport_height,
+            _ => ortho.scale,
+        }
+    } else {
+        1.0
+    };
+
+    // Keyboard pan (WASD + arrow keys) — move along the ground plane
+    let speed = 0.3 * cam_scale * time.delta_secs();
+    let forward = Vec3::new(transform.forward().x, 0.0, transform.forward().z).normalize_or_zero();
+    let right = Vec3::new(transform.right().x, 0.0, transform.right().z).normalize_or_zero();
+
+    let mut move_dir = Vec3::ZERO;
+    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
+        move_dir += forward;
+    }
+    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
+        move_dir -= forward;
+    }
+    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
+        move_dir -= right;
+    }
+    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
+        move_dir += right;
+    }
+
+    if move_dir != Vec3::ZERO {
+        transform.translation += move_dir.normalize() * speed;
+    }
+
+    // Scroll zoom
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *projection {
             let factor = if event.y > 0.0 { 0.9 } else { 1.1 };
-            ortho.scale = (ortho.scale * factor).clamp(0.3, 3.0);
+            if let ScalingMode::FixedVertical { ref mut viewport_height } = ortho.scaling_mode {
+                *viewport_height = (*viewport_height * factor).clamp(10.0, 150.0);
+            } else {
+                ortho.scale = (ortho.scale * factor).clamp(5.0, 80.0);
+            }
         }
     }
 
-    if mouse_button.pressed(MouseButton::Right) {
-        if let Some(cursor) = window.cursor_position() {
-            let center = Vec2::new(window.width() / 2.0, window.height() / 2.0);
-            let delta = (cursor - center) * 0.02;
-            transform.translation.x += delta.x;
-            transform.translation.y -= delta.y;
+    // Mouse drag pan
+    let dragging = mouse_button.pressed(MouseButton::Left)
+        || mouse_button.pressed(MouseButton::Middle)
+        || mouse_button.pressed(MouseButton::Right);
+
+    if let Some(cursor) = window.cursor_position() {
+        if dragging {
+            if let Some(last) = *last_cursor {
+                let delta = cursor - last;
+                let pan_speed = cam_scale * 0.002;
+                transform.translation -= right * delta.x * pan_speed;
+                transform.translation += forward * delta.y * pan_speed;
+            }
         }
+        *last_cursor = Some(cursor);
+    }
+
+    if !dragging {
+        *last_cursor = None;
     }
 }

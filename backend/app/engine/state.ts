@@ -2,7 +2,30 @@ import crypto from 'node:crypto'
 
 // --- Enums ---
 
-export type TileType = 'open' | 'blocked'
+export type TileType =
+  | 'grass'
+  | 'desert'
+  | 'forest'
+  | 'mountain'
+  | 'water_lake'
+  | 'water_sea'
+  | 'snow'
+
+export interface Tile {
+  type: TileType
+  elevation: number // 0-3
+}
+
+/** Movement cost per tile type. Infinity = impassable. */
+export const TILE_MOVEMENT_COST: Record<TileType, number> = {
+  grass: 1.0,
+  desert: 1.5,
+  forest: 1.5,
+  mountain: Infinity,
+  water_lake: Infinity,
+  water_sea: Infinity,
+  snow: 2.0,
+}
 export type UnitType = 'worker' | 'soldier' | 'scout'
 export type UnitStatus = 'idle' | 'moving' | 'attacking' | 'harvesting' | 'returning' | 'dead'
 export type BuildingType = 'base' | 'turret' | 'wall'
@@ -65,7 +88,7 @@ export interface ResourceNode {
 export interface MapConfig {
   width: number
   height: number
-  terrain: string
+  terrain: Tile[][] | string // Tile[][] for new maps, string for legacy compat
   resourceNodes: { x: number; y: number; energy: number }[]
   startPositions: Position[]
 }
@@ -117,7 +140,7 @@ export class GameState {
   tick: number = 0
   phase: MatchPhase = 'active'
   mapConfig: MapConfig
-  terrain: TileType[][]
+  terrain: Tile[][]
   units: Map<string, Unit> = new Map()
   buildings: Map<string, Building> = new Map()
   resources: Map<string, ResourceNode> = new Map()
@@ -137,10 +160,18 @@ export class GameState {
   constructor(mapConfig: MapConfig) {
     this.mapConfig = mapConfig
 
-    // Initialize terrain (all open for MVP)
-    this.terrain = Array.from({ length: mapConfig.height }, () =>
-      Array.from({ length: mapConfig.width }, () => 'open' as TileType)
-    )
+    // Initialize terrain from map config or default to grass
+    if (
+      mapConfig.terrain &&
+      typeof mapConfig.terrain === 'object' &&
+      Array.isArray(mapConfig.terrain)
+    ) {
+      this.terrain = mapConfig.terrain as Tile[][]
+    } else {
+      this.terrain = Array.from({ length: mapConfig.height }, () =>
+        Array.from({ length: mapConfig.width }, () => ({ type: 'grass' as TileType, elevation: 1 }))
+      )
+    }
 
     // Initialize resource nodes
     for (const node of mapConfig.resourceNodes) {
@@ -251,12 +282,20 @@ export class GameState {
 
   isBlocked(x: number, y: number): boolean {
     if (x < 0 || y < 0 || x >= this.mapConfig.width || y >= this.mapConfig.height) return true
-    if (this.terrain[y][x] === 'blocked') return true
-    // Buildings block movement (except your own base for spawning)
+    const tile = this.terrain[y]?.[x]
+    if (tile && TILE_MOVEMENT_COST[tile.type] === Infinity) return true
     for (const building of this.buildings.values()) {
       if (building.x === x && building.y === y && building.buildingType === 'wall') return true
     }
     return false
+  }
+
+  /** Get movement cost for a tile. Returns Infinity if impassable. */
+  getMovementCost(x: number, y: number): number {
+    if (x < 0 || y < 0 || x >= this.mapConfig.width || y >= this.mapConfig.height) return Infinity
+    const tile = this.terrain[y]?.[x]
+    if (!tile) return 1.0
+    return TILE_MOVEMENT_COST[tile.type]
   }
 
   getPlayerBase(slot: number): Building | undefined {

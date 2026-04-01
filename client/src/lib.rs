@@ -33,7 +33,6 @@ pub struct EntityMap {
     pub units: std::collections::HashMap<String, Entity>,
     pub buildings: std::collections::HashMap<String, Entity>,
     pub resources: std::collections::HashMap<String, Entity>,
-    pub fog_tiles: Vec<Vec<Entity>>,
     pub terrain_spawned: bool,
 }
 
@@ -46,11 +45,12 @@ pub fn start() {
             primary_window: Some(Window {
                 canvas: Some("#glcanvas".to_string()),
                 fit_canvas_to_parent: true,
-                prevent_default_event_handling: true,
+                prevent_default_event_handling: false,
                 ..default()
             }),
             ..default()
         }))
+        .insert_resource(ClearColor(Color::srgb(0.08, 0.10, 0.18)))
         .init_resource::<GameStateView>()
         .init_resource::<EntityMap>()
         .add_systems(Startup, renderer::setup_camera)
@@ -69,18 +69,42 @@ pub fn start() {
 // --- Systems ---
 
 fn drain_pending_updates(mut state: ResMut<GameStateView>) {
-    // Process full snapshots first
     if let Ok(mut snapshots) = PENDING_SNAPSHOTS.lock() {
         for data in snapshots.drain(..) {
-            if let Ok(new_state) = rmp_serde::from_slice::<GameStateView>(&data) {
-                *state = new_state;
-            } else if let Ok(new_state) = serde_json::from_slice::<GameStateView>(&data) {
-                *state = new_state;
+            match rmp_serde::from_slice::<GameStateView>(&data) {
+                Ok(new_state) => {
+                    web_sys::console::log_1(
+                        &format!(
+                            "[wasm] Snapshot: {}x{}, {} terrain rows, {} units, {} buildings",
+                            new_state.map_width,
+                            new_state.map_height,
+                            new_state.terrain.len(),
+                            new_state.units.len(),
+                            new_state.buildings.len()
+                        )
+                        .into(),
+                    );
+                    *state = new_state;
+                }
+                Err(e) => {
+                    web_sys::console::warn_1(
+                        &format!("[wasm] MsgPack failed: {:?}", e).into(),
+                    );
+                    match serde_json::from_slice::<GameStateView>(&data) {
+                        Ok(new_state) => {
+                            *state = new_state;
+                        }
+                        Err(e2) => {
+                            web_sys::console::error_1(
+                                &format!("[wasm] Both failed: {:?} / {:?}", e, e2).into(),
+                            );
+                        }
+                    }
+                }
             }
         }
     }
 
-    // Then apply diffs
     if let Ok(mut diffs) = PENDING_DIFFS.lock() {
         for data in diffs.drain(..) {
             if let Ok(diff) = rmp_serde::from_slice::<StateDiff>(&data) {
