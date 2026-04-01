@@ -182,13 +182,23 @@ fn spawn_terrain(
             let key = format!("{:?}", tile_type);
             let mat = tile_mats.get(&key).cloned().unwrap_or(default_mat.clone());
 
-            // 3D hex column: a cylinder with 6 sides
+            // Log first few tiles for debugging
+            if x < 3 && y < 3 {
+                web_sys::console::log_1(
+                    &format!(
+                        "[hex] ({},{}) -> world({:.2}, {:.2}) size={} w={:.2} h={:.2}",
+                        x, y, pos.x, pos.y, HEX_SIZE, HEX_W, HEX_H
+                    ).into(),
+                );
+            }
+
             let hex_mesh = meshes.add(Extrusion::new(RegularPolygon::new(HEX_SIZE - 0.02, 6), height));
 
             commands.spawn((
                 Mesh3d(hex_mesh),
                 MeshMaterial3d(mat),
-                Transform::from_xyz(pos.x, height * 0.5, pos.y),
+                Transform::from_xyz(pos.x, height * 0.5, pos.y)
+                    .with_rotation(Quat::from_rotation_x(-std::f32::consts::FRAC_PI_2)),
                 TerrainTile,
             ));
         }
