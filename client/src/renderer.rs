@@ -72,16 +72,20 @@ pub struct TerrainTile;
 
 pub fn setup_camera(mut commands: Commands) {
     let center = hex_to_pixel(16, 16);
+    // center.x ~ 27.7, center.y ~ -24.0
+    // In 3D: X = center.x, Y = up, Z = center.y (depth)
+    let look_at = Vec3::new(center.x, 0.0, center.y);
+    // Camera offset: up and back from the look target (isometric angle)
+    let cam_pos = look_at + Vec3::new(10.0, 20.0, 10.0);
 
-    // 3D orthographic camera looking down at an angle (isometric-ish)
     commands.spawn((
         Camera3d::default(),
         Projection::from(OrthographicProjection {
-            scale: 12.0,
+            scale: 20.0,
             ..OrthographicProjection::default_3d()
         }),
-        Transform::from_xyz(center.x + 15.0, 25.0, center.y - 15.0)
-            .looking_at(Vec3::new(center.x, 0.0, center.y), Vec3::Y),
+        Transform::from_xyz(cam_pos.x, cam_pos.y, cam_pos.z)
+            .looking_at(look_at, Vec3::Y),
     ));
 
     // Directional light (sun)
