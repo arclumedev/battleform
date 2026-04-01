@@ -50,7 +50,7 @@ pub fn start() {
             }),
             ..default()
         }))
-        .insert_resource(ClearColor(Color::srgb(0.55, 0.70, 0.85)))
+        .insert_resource(ClearColor(Color::srgb(0.08, 0.10, 0.18)))
         .init_resource::<GameStateView>()
         .init_resource::<EntityMap>()
         .add_systems(Startup, renderer::setup_camera)

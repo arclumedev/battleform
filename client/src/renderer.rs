@@ -101,14 +101,28 @@ pub fn setup_camera(mut commands: Commands) {
             .looking_at(look_at, Vec3::Y),
     ));
 
-    // Point light above the map
-    commands.spawn((
-        PointLight {
-            intensity: 2_000_000.0,
-            ..default()
-        },
-        Transform::from_xyz(center.x, 30.0, center.y),
-    ));
+    // Multiple point lights spread across the map for even illumination
+    let offsets = [
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(20.0, 0.0, 0.0),
+        Vec3::new(-20.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 20.0),
+        Vec3::new(0.0, 0.0, -20.0),
+    ];
+    for offset in offsets {
+        commands.spawn((
+            PointLight {
+                intensity: 3_000_000.0,
+                range: 80.0,
+                ..default()
+            },
+            Transform::from_xyz(
+                look_at.x + offset.x,
+                25.0,
+                look_at.z + offset.z,
+            ),
+        ));
+    }
 }
 
 // --- Entity Sync ---
