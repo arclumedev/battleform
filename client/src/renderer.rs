@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use crate::state::*;
 use crate::EntityMap;
 
-const HEX_SIZE: f32 = 1.0;
+const HEX_SIZE: f32 = 2.0;
 const HEX_WIDTH: f32 = HEX_SIZE * 1.732;
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
 
@@ -75,13 +75,16 @@ pub fn setup_camera(mut commands: Commands) {
     // center.x ~ 27.7, center.y ~ -24.0
     // In 3D: X = center.x, Y = up, Z = center.y (depth)
     let look_at = Vec3::new(center.x, 0.0, center.y);
-    // Camera offset: up and back from the look target (isometric angle)
-    let cam_pos = look_at + Vec3::new(10.0, 20.0, 10.0);
+    let cam_pos = look_at + Vec3::new(40.0, 80.0, 40.0);
+
+    web_sys::console::log_1(
+        &format!("[wasm] Camera: look_at={:?}, pos={:?}", look_at, cam_pos).into(),
+    );
 
     commands.spawn((
         Camera3d::default(),
         Projection::from(OrthographicProjection {
-            scale: 5.0,
+            scale: 40.0,
             ..OrthographicProjection::default_3d()
         }),
         Transform::from_xyz(cam_pos.x, cam_pos.y, cam_pos.z)
@@ -437,7 +440,7 @@ pub fn camera_controls(
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *projection {
             let factor = if event.y > 0.0 { 0.9 } else { 1.1 };
-            ortho.scale = (ortho.scale * factor).clamp(3.0, 30.0);
+            ortho.scale = (ortho.scale * factor).clamp(5.0, 80.0);
         }
     }
 
