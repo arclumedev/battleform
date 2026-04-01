@@ -6,9 +6,14 @@
 # Run lint-staged for backend and frontend (only if relevant files changed)
 npx lint-staged
 
-# Check if game client files changed — if so, run cargo clippy
-CLIENT_CHANGED=$(git diff --cached --name-only -- client/)
-if [ -n "$CLIENT_CHANGED" ]; then
-  echo "client/ changed — running cargo clippy..."
-  (cd client && cargo clippy --all-targets -- -D warnings)
+# Check if game crate files changed — if so, run cargo clippy
+GAME_CHANGED=$(git diff --cached --name-only -- game/ client/)
+if [ -n "$GAME_CHANGED" ]; then
+  if [ -d "game" ]; then
+    echo "game/ changed — running cargo clippy..."
+    (cd game && cargo clippy --all-targets -- -D warnings)
+  elif [ -d "client" ]; then
+    echo "client/ changed — running cargo clippy..."
+    (cd client && cargo clippy --all-targets -- -D warnings)
+  fi
 fi
