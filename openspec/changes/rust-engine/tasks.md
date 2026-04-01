@@ -88,8 +88,8 @@
 
 ## 12. Local MCP agent support
 
-- [ ] 12.1 Create `bf_engine/src/mcp.rs` — stdio MCP server exposing game tools
-- [ ] 12.2 Implement tools: `get_game_state`, `spawn_unit`, `move_unit`, `attack_target`, `harvest`
+- [x] 12.1 Create `bf_engine/src/mcp.rs` — stdio MCP server exposing game tools
+- [x] 12.2 Implement tools: `get_game_state`, `spawn_unit`, `move_unit`, `attack_target`, `harvest`
 - [ ] 12.3 Native binary accepts `--agent <command>` flag to spawn an agent process with stdio MCP
 - [ ] 12.4 Agent process connects via stdin/stdout, sends tool calls, receives results
 - [ ] 12.5 Test with existing Claude/GPT agent harnesses from `agents/`
@@ -110,6 +110,6 @@
 - [ ] 14.2 Run full match: native binary, MCP agent opponent, verify agent can play
 - [ ] 14.3 Run full match: native binary, online mode, connect to AdonisJS multiplayer server
 - [ ] 14.4 Verify WASM build still works (`wasm-pack build crates/bf_game --no-default-features --features wasm`)
-- [ ] 14.5 Update `CLAUDE.md` with new workspace layout, build commands, and `crates/` structure
+- [x] 14.5 Update `CLAUDE.md` with new workspace layout, build commands, and `crates/` structure
 - [ ] 14.6 Update `openspec/specs/game-engine/spec.md` to note Rust implementation
 - [ ] 14.7 Update `openspec/specs/game-client/spec.md` to add local/offline play, plugin architecture, and multiplayer client capabilities

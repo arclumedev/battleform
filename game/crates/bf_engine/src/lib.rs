@@ -3,6 +3,7 @@ pub mod pathfinding;
 pub mod fog;
 pub mod maps;
 pub mod bot_ai;
+pub mod mcp;
 
 use bf_types::*;
 

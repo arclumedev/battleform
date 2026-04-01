@@ -46,11 +46,13 @@ Use ArcLume MCP tools to access infrastructure. Infrastructure lives in the **Ro
 
 ## Tech Stack
 
-- **Backend:** AdonisJS 6 (TypeScript), PostgreSQL, Redis
+- **Game Engine:** Rust (`bf_engine` crate) — pure game logic, no Bevy/IO deps
+- **Game Client:** Bevy 0.16 (`bf_game` crate) — native binary + WASM spectator
+- **Shared Types:** `bf_types` crate — serde types used by engine + client
+- **Multiplayer Server:** AdonisJS 6 (TypeScript), PostgreSQL, Redis
 - **Frontend:** Vue 3 + Vite, WASM bridge layer
-- **Renderer:** Macroquad (Rust → WASM via wasm-bindgen)
 - **Auth:** OAuth (Google + GitHub) via @adonisjs/ally, session-based
-- **Agent Protocol:** MCP (Streamable HTTP), per-match Bearer tokens
+- **Agent Protocol:** MCP — stdio (local) or Streamable HTTP (multiplayer), per-match Bearer tokens
 - **Deploy:** AWS ECS Fargate (shared Rowan cluster), S3 + CloudFront
 
 ## Node Version
@@ -62,9 +64,9 @@ Use Node 22 LTS. The repo has an `.nvmrc` — run `nvm use` before working.
 Husky runs automatically on every commit. **Never skip hooks** (`--no-verify`) during feature development.
 
 The pre-commit hook runs **only for changed services**:
-- **backend/** changes → ESLint + `tsc --noEmit`
+- **multiplayer_server/** changes → ESLint + `tsc --noEmit`
 - **frontend/** changes → ESLint + `vue-tsc --build`
-- **client/** changes → `cargo clippy -D warnings`
+- **game/** changes → `cargo clippy -D warnings`
 
 If a hook fails, fix the issue before committing. Do not bypass.
 
@@ -86,14 +88,35 @@ nvm use
 docker compose up -d
 
 # 2. Run database migrations
-cd backend && node ace migration:run
+cd multiplayer_server && node ace migration:run
 
-# 3. Start backend (hot reload)
-cd backend && node ace serve --watch
+# 3. Start multiplayer server (hot reload)
+cd multiplayer_server && node ace serve --watch
 
 # 4. Start frontend (Vite dev server)
 cd frontend && npm run dev
 
 # 5. Build WASM game client (when changing Rust code)
-cd client && wasm-pack build --dev --target web --out-dir ../frontend/public/pkg
+cd game && wasm-pack build crates/bf_game --no-default-features --features wasm \
+    --target web --out-dir ../../frontend/public/pkg
+
+# 6. Run native game (standalone, no server needed)
+cd game && cargo run -p bf_game --no-default-features --features native
+
+# 7. Run Rust tests
+cd game && cargo test
+```
+
+### Rust Workspace Layout
+
+```
+game/
+├── Cargo.toml              (workspace root)
+├── rust-toolchain.toml
+└── crates/
+    ├── bf_types/            (shared types — no Bevy dep)
+    ├── bf_engine/           (game simulation — no Bevy, no IO)
+    └── bf_game/             (Bevy app — renderer + integration)
+        ├── src/main.rs      (native binary)
+        └── src/lib.rs       (WASM entry point)
 ```
