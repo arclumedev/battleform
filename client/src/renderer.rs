@@ -184,7 +184,8 @@ fn spawn_terrain(
             commands.spawn((
                 Mesh3d(hex_mesh),
                 MeshMaterial3d(mat),
-                Transform::from_xyz(pos.x, height * 0.5, pos.y),
+                Transform::from_xyz(pos.x, height * 0.5, pos.y)
+                    .with_rotation(Quat::from_rotation_y(std::f32::consts::FRAC_PI_6)),
                 TerrainTile,
             ));
         }
