@@ -4,60 +4,16 @@ use bevy::prelude::*;
 use crate::state::*;
 use crate::EntityMap;
 
-const HEX_SIZE: f32 = 12.0;
-const HEX_WIDTH: f32 = HEX_SIZE * 1.732; // sqrt(3) * size
+const HEX_SIZE: f32 = 1.0;
+const HEX_WIDTH: f32 = HEX_SIZE * 1.732;
 const HEX_HEIGHT: f32 = HEX_SIZE * 2.0;
 
-/// Camera rotation for Civ-style tilt (~25 degrees, tilted left)
-const CAM_ANGLE: f32 = -0.22;
-/// Camera Y scale for isometric foreshortening
-const CAM_Y_SCALE: f32 = 0.58;
-
-/// Convert hex grid (col, row) to flat pixel coordinates.
-/// The isometric perspective is handled entirely by the camera transform.
+/// Convert hex grid (col, row) to flat world coordinates.
 fn hex_to_pixel(col: i32, row: i32) -> Vec2 {
     let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
     let px = col as f32 * HEX_WIDTH + offset;
     let py = -(row as f32 * HEX_HEIGHT * 0.75);
     Vec2::new(px, py)
-}
-
-/// Convert screen pixel coordinates back to hex grid, accounting for camera transform.
-fn pixel_to_hex(screen: Vec2, cam_x: f32, cam_y: f32, cam_scale: f32, win_w: f32, win_h: f32) -> (i32, i32) {
-    // Screen to world: offset from center, scale, un-squish Y, un-rotate, translate
-    let cx = (screen.x - win_w * 0.5) * cam_scale;
-    let cy = -(screen.y - win_h * 0.5) * cam_scale;
-
-    // Reverse Y squish
-    let uy = cy / CAM_Y_SCALE;
-    let ux = cx;
-
-    // Reverse rotation
-    let cos_a = CAM_ANGLE.cos();
-    let sin_a = CAM_ANGLE.sin();
-    let flat_x = ux * cos_a + uy * sin_a + cam_x;
-    let flat_y = -ux * sin_a + uy * cos_a + cam_y;
-
-    let row = (-flat_y / (HEX_HEIGHT * 0.75)).round() as i32;
-    let offset = if row % 2 != 0 { HEX_WIDTH * 0.5 } else { 0.0 };
-    let col = ((flat_x - offset) / HEX_WIDTH).round() as i32;
-    (col, row)
-}
-
-/// Public wrapper for JS tooltip queries — reads camera state from global.
-pub fn pixel_to_hex_pub(screen_x: f32, screen_y: f32) -> (i32, i32) {
-    if let Ok(cam) = crate::CAMERA_STATE.lock() {
-        pixel_to_hex(
-            Vec2::new(screen_x, screen_y),
-            cam.x,
-            cam.y,
-            cam.scale,
-            cam.win_w,
-            cam.win_h,
-        )
-    } else {
-        (0, 0)
-    }
 }
 
 const PLAYER_COLORS: [Color; 8] = [
@@ -72,11 +28,33 @@ const PLAYER_COLORS: [Color; 8] = [
 ];
 
 fn player_color(slot: u8) -> Color {
-    PLAYER_COLORS
-        .get(slot as usize)
-        .copied()
-        .unwrap_or(Color::WHITE)
+    PLAYER_COLORS.get(slot as usize).copied().unwrap_or(Color::WHITE)
 }
+
+fn tile_color(tile_type: &TileType) -> Color {
+    match tile_type {
+        TileType::Grass => Color::srgb(0.35, 0.55, 0.25),
+        TileType::Desert => Color::srgb(0.72, 0.62, 0.38),
+        TileType::Forest => Color::srgb(0.18, 0.40, 0.15),
+        TileType::Mountain => Color::srgb(0.50, 0.48, 0.45),
+        TileType::WaterLake => Color::srgb(0.25, 0.45, 0.65),
+        TileType::WaterSea => Color::srgb(0.15, 0.32, 0.55),
+        TileType::Snow => Color::srgb(0.82, 0.84, 0.88),
+    }
+}
+
+fn tile_height(tile_type: &TileType, elevation: u8) -> f32 {
+    let base = match tile_type {
+        TileType::WaterLake | TileType::WaterSea => 0.05,
+        TileType::Grass | TileType::Desert => 0.15,
+        TileType::Forest => 0.25,
+        TileType::Snow => 0.3,
+        TileType::Mountain => 0.6,
+    };
+    base + elevation as f32 * 0.1
+}
+
+// --- Components ---
 
 #[derive(Component)]
 pub struct UnitMarker(#[allow(dead_code)] pub String);
@@ -88,58 +66,69 @@ pub struct BuildingMarker(#[allow(dead_code)] pub String);
 pub struct ResourceMarker(#[allow(dead_code)] pub String);
 
 #[derive(Component)]
-pub struct FogTile;
-
-#[derive(Component)]
 pub struct TerrainTile;
+
+// --- Setup ---
 
 pub fn setup_camera(mut commands: Commands) {
     let center = hex_to_pixel(16, 16);
+
+    // 3D orthographic camera looking down at an angle (isometric-ish)
     commands.spawn((
-        Camera2d,
-        Transform::from_xyz(center.x, center.y, 999.0)
-            .with_rotation(Quat::from_rotation_z(-CAM_ANGLE))
-            .with_scale(Vec3::new(1.0, 1.0 / CAM_Y_SCALE, 1.0)),
+        Camera3d::default(),
+        Projection::from(OrthographicProjection {
+            scale: 12.0,
+            ..OrthographicProjection::default_3d()
+        }),
+        Transform::from_xyz(center.x + 15.0, 25.0, center.y - 15.0)
+            .looking_at(Vec3::new(center.x, 0.0, center.y), Vec3::Y),
     ));
+
+    // Directional light (sun)
+    commands.spawn((
+        DirectionalLight {
+            illuminance: 8000.0,
+            shadows_enabled: false,
+            ..default()
+        },
+        Transform::from_rotation(Quat::from_euler(EulerRot::XYZ, -0.8, 0.3, 0.0)),
+    ));
+
+    // Ambient light
+    commands.insert_resource(AmbientLight {
+        color: Color::WHITE,
+        brightness: 300.0,
+        affects_lightmapped_meshes: false,
+    });
 }
+
+// --- Entity Sync ---
 
 pub fn sync_entities(
     mut commands: Commands,
     state: Res<GameStateView>,
     mut entity_map: ResMut<EntityMap>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     if state.map_width == 0 || state.map_height == 0 {
         return;
     }
 
     if !entity_map.terrain_spawned {
-        spawn_terrain(
-            &mut commands,
-            &state,
-            &mut entity_map,
-            &mut meshes,
-            &mut materials,
+        web_sys::console::log_1(
+            &format!(
+                "[wasm] Spawning 3D terrain: {}x{}, {} rows",
+                state.map_width, state.map_height, state.terrain.len()
+            )
+            .into(),
         );
+        spawn_terrain(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
     }
 
     sync_units(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
     sync_buildings(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
     sync_resources(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
-    sync_fog(&mut commands, &state, &mut entity_map, &mut meshes, &mut materials);
-}
-
-fn tile_color(tile_type: &TileType) -> Color {
-    match tile_type {
-        TileType::Grass => Color::srgb(0.22, 0.38, 0.18),
-        TileType::Desert => Color::srgb(0.55, 0.45, 0.28),
-        TileType::Forest => Color::srgb(0.12, 0.28, 0.10),
-        TileType::Mountain => Color::srgb(0.35, 0.32, 0.30),
-        TileType::WaterLake => Color::srgb(0.15, 0.30, 0.50),
-        TileType::WaterSea => Color::srgb(0.10, 0.22, 0.42),
-        TileType::Snow => Color::srgb(0.70, 0.72, 0.75),
-    }
 }
 
 fn spawn_terrain(
@@ -147,12 +136,10 @@ fn spawn_terrain(
     state: &GameStateView,
     entity_map: &mut EntityMap,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
+    materials: &mut Assets<StandardMaterial>,
 ) {
-    let hex_mesh = meshes.add(RegularPolygon::new(HEX_SIZE - 0.5, 6));
-
     // Pre-create materials for each tile type
-    let tile_mats: std::collections::HashMap<String, Handle<ColorMaterial>> = [
+    let tile_mats: std::collections::HashMap<String, Handle<StandardMaterial>> = [
         TileType::Grass,
         TileType::Desert,
         TileType::Forest,
@@ -164,12 +151,20 @@ fn spawn_terrain(
     .into_iter()
     .map(|t| {
         let key = format!("{:?}", t);
-        let mat = materials.add(ColorMaterial::from_color(tile_color(&t)));
+        let mat = materials.add(StandardMaterial {
+            base_color: tile_color(&t),
+            perceptual_roughness: 0.9,
+            metallic: 0.0,
+            ..default()
+        });
         (key, mat)
     })
     .collect();
 
-    let default_mat = materials.add(ColorMaterial::from_color(tile_color(&TileType::Grass)));
+    let default_mat = materials.add(StandardMaterial {
+        base_color: tile_color(&TileType::Grass),
+        ..default()
+    });
 
     for y in 0..state.map_height {
         for x in 0..state.map_width {
@@ -182,21 +177,23 @@ fn spawn_terrain(
             let elevation = tile.map(|t| t.elevation).unwrap_or(1);
 
             let pos = hex_to_pixel(x as i32, y as i32);
+            let height = tile_height(tile_type, elevation);
             let key = format!("{:?}", tile_type);
             let mat = tile_mats.get(&key).cloned().unwrap_or(default_mat.clone());
 
-            // Elevation: shift Y up slightly for higher tiles
-            let elev_offset = elevation as f32 * 1.5;
+            // 3D hex column: a cylinder with 6 sides
+            let hex_mesh = meshes.add(Extrusion::new(RegularPolygon::new(HEX_SIZE - 0.02, 6), height));
 
             commands.spawn((
-                Mesh2d(hex_mesh.clone()),
-                MeshMaterial2d(mat),
-                Transform::from_xyz(pos.x, pos.y + elev_offset, elevation as f32 * 0.1),
+                Mesh3d(hex_mesh),
+                MeshMaterial3d(mat),
+                Transform::from_xyz(pos.x, height * 0.5, pos.y),
                 TerrainTile,
             ));
         }
     }
     entity_map.terrain_spawned = true;
+    web_sys::console::log_1(&"[wasm] 3D terrain spawned!".into());
 }
 
 fn sync_units(
@@ -204,33 +201,53 @@ fn sync_units(
     state: &GameStateView,
     entity_map: &mut EntityMap,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
+    materials: &mut Assets<StandardMaterial>,
 ) {
     let mut seen = std::collections::HashSet::new();
 
     for unit in &state.units {
         seen.insert(unit.id.clone());
+
         let radius = match unit.unit_type {
-            UnitType::Worker => HEX_SIZE * 0.35,
-            UnitType::Soldier => HEX_SIZE * 0.55,
-            UnitType::Scout => HEX_SIZE * 0.4,
+            UnitType::Worker => HEX_SIZE * 0.25,
+            UnitType::Soldier => HEX_SIZE * 0.35,
+            UnitType::Scout => HEX_SIZE * 0.28,
         };
+        let unit_height = match unit.unit_type {
+            UnitType::Worker => 0.3,
+            UnitType::Soldier => 0.5,
+            UnitType::Scout => 0.4,
+        };
+
         let p = hex_to_pixel(unit.x, unit.y);
-        let mat = materials.add(ColorMaterial::from_color(player_color(unit.player_slot)));
-        let mesh = meshes.add(Circle::new(radius));
+        // Place unit on top of the terrain
+        let terrain_h = state
+            .terrain
+            .get(unit.y as usize)
+            .and_then(|row| row.get(unit.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
+        let y_pos = terrain_h + unit_height * 0.5;
 
         if let Some(&entity) = entity_map.units.get(&unit.id) {
-            commands.entity(entity).insert((
-                Transform::from_xyz(p.x, p.y, 2.0),
-                Mesh2d(mesh),
-                MeshMaterial2d(mat),
-            ));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
+            let mesh = meshes.add(Capsule3d::new(radius, unit_height));
+            let mat = materials.add(StandardMaterial {
+                base_color: player_color(unit.player_slot),
+                perceptual_roughness: 0.5,
+                metallic: 0.2,
+                ..default()
+            });
+
             let entity = commands
                 .spawn((
-                    Mesh2d(mesh),
-                    MeshMaterial2d(mat),
-                    Transform::from_xyz(p.x, p.y, 2.0),
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, y_pos, p.y),
                     UnitMarker(unit.id.clone()),
                 ))
                 .id();
@@ -253,22 +270,45 @@ fn sync_buildings(
     state: &GameStateView,
     entity_map: &mut EntityMap,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
+    materials: &mut Assets<StandardMaterial>,
 ) {
     let mut seen = std::collections::HashSet::new();
 
     for building in &state.buildings {
         seen.insert(building.id.clone());
+
         let p = hex_to_pixel(building.x, building.y);
-        let pos = Transform::from_xyz(p.x, p.y, 1.0);
-        let mat = materials.add(ColorMaterial::from_color(player_color(building.player_slot)));
-        let mesh = meshes.add(RegularPolygon::new(HEX_SIZE * 0.75, 6));
+        let terrain_h = state
+            .terrain
+            .get(building.y as usize)
+            .and_then(|row| row.get(building.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
+        let building_h = 1.2;
+        let building_w = HEX_SIZE * 0.6;
+        let y_pos = terrain_h + building_h * 0.5;
 
         if let Some(&entity) = entity_map.buildings.get(&building.id) {
-            commands.entity(entity).insert((pos, Mesh2d(mesh), MeshMaterial2d(mat)));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
+            let mesh = meshes.add(Cuboid::new(building_w, building_h, building_w));
+            let mat = materials.add(StandardMaterial {
+                base_color: player_color(building.player_slot),
+                perceptual_roughness: 0.6,
+                metallic: 0.1,
+                ..default()
+            });
+
             let entity = commands
-                .spawn((Mesh2d(mesh), MeshMaterial2d(mat), pos, BuildingMarker(building.id.clone())))
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, y_pos, p.y),
+                    BuildingMarker(building.id.clone()),
+                ))
                 .id();
             entity_map.buildings.insert(building.id.clone(), entity);
         }
@@ -289,24 +329,44 @@ fn sync_resources(
     state: &GameStateView,
     entity_map: &mut EntityMap,
     meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
+    materials: &mut Assets<StandardMaterial>,
 ) {
     let mut seen = std::collections::HashSet::new();
 
     for resource in &state.resources {
         seen.insert(resource.id.clone());
-        let brightness = (resource.remaining as f32 / 500.0).clamp(0.3, 1.0);
-        let color = Color::srgb(brightness, brightness * 0.9, 0.1);
+
         let p = hex_to_pixel(resource.x, resource.y);
-        let pos = Transform::from_xyz(p.x, p.y, 1.5);
-        let mat = materials.add(ColorMaterial::from_color(color));
-        let mesh = meshes.add(RegularPolygon::new(HEX_SIZE * 0.4, 6));
+        let terrain_h = state
+            .terrain
+            .get(resource.y as usize)
+            .and_then(|row| row.get(resource.x as usize))
+            .map(|t| tile_height(&t.tile_type, t.elevation))
+            .unwrap_or(0.15);
+
+        let brightness = (resource.remaining as f32 / 500.0).clamp(0.3, 1.0);
 
         if let Some(&entity) = entity_map.resources.get(&resource.id) {
-            commands.entity(entity).insert((pos, Mesh2d(mesh), MeshMaterial2d(mat)));
+            commands
+                .entity(entity)
+                .insert(Transform::from_xyz(p.x, terrain_h + 0.2, p.y));
         } else {
+            let mesh = meshes.add(Sphere::new(HEX_SIZE * 0.2));
+            let mat = materials.add(StandardMaterial {
+                base_color: Color::srgb(brightness, brightness * 0.9, 0.1),
+                emissive: LinearRgba::new(brightness * 0.3, brightness * 0.25, 0.0, 1.0),
+                perceptual_roughness: 0.3,
+                metallic: 0.5,
+                ..default()
+            });
+
             let entity = commands
-                .spawn((Mesh2d(mesh), MeshMaterial2d(mat), pos, ResourceMarker(resource.id.clone())))
+                .spawn((
+                    Mesh3d(mesh),
+                    MeshMaterial3d(mat),
+                    Transform::from_xyz(p.x, terrain_h + 0.2, p.y),
+                    ResourceMarker(resource.id.clone()),
+                ))
                 .id();
             entity_map.resources.insert(resource.id.clone(), entity);
         }
@@ -322,75 +382,14 @@ fn sync_resources(
     });
 }
 
-fn sync_fog(
-    commands: &mut Commands,
-    state: &GameStateView,
-    entity_map: &mut EntityMap,
-    meshes: &mut Assets<Mesh>,
-    materials: &mut Assets<ColorMaterial>,
-) {
-    let rows = state.map_height as usize;
-    let cols = state.map_width as usize;
-
-    let needs_rebuild =
-        entity_map.fog_tiles.len() != rows || (rows > 0 && entity_map.fog_tiles[0].len() != cols);
-
-    if needs_rebuild {
-        for row in entity_map.fog_tiles.drain(..) {
-            for entity in row {
-                commands.entity(entity).despawn();
-            }
-        }
-
-        let hex_mesh = meshes.add(RegularPolygon::new(HEX_SIZE - 0.3, 6));
-
-        for y in 0..rows {
-            let mut row_entities = Vec::with_capacity(cols);
-            for x in 0..cols {
-                let alpha = fog_alpha(&state.visibility, x, y);
-                let p = hex_to_pixel(x as i32, y as i32);
-                let mat = materials.add(ColorMaterial::from_color(Color::srgba(0.0, 0.0, 0.0, alpha)));
-                let entity = commands
-                    .spawn((
-                        Mesh2d(hex_mesh.clone()),
-                        MeshMaterial2d(mat),
-                        Transform::from_xyz(p.x, p.y, 5.0),
-                        FogTile,
-                    ))
-                    .id();
-                row_entities.push(entity);
-            }
-            entity_map.fog_tiles.push(row_entities);
-        }
-    } else {
-        for (y, row) in entity_map.fog_tiles.iter().enumerate() {
-            for (x, &entity) in row.iter().enumerate() {
-                let alpha = fog_alpha(&state.visibility, x, y);
-                let mat = materials.add(ColorMaterial::from_color(Color::srgba(0.0, 0.0, 0.0, alpha)));
-                commands.entity(entity).insert(MeshMaterial2d(mat));
-            }
-        }
-    }
-}
-
-fn fog_alpha(visibility: &[Vec<VisibilityState>], x: usize, y: usize) -> f32 {
-    visibility
-        .get(y)
-        .and_then(|row| row.get(x))
-        .map(|vis| match vis {
-            VisibilityState::Unseen => 0.9,
-            VisibilityState::PreviouslySeen => 0.5,
-            VisibilityState::Visible => 0.0,
-        })
-        .unwrap_or(0.9)
-}
+// --- Camera Controls ---
 
 pub fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
     mut scroll_events: EventReader<MouseWheel>,
     windows: Query<&Window>,
-    mut camera: Query<(&mut Transform, &mut Projection), With<Camera2d>>,
+    mut camera: Query<(&mut Transform, &mut Projection), With<Camera3d>>,
     time: Res<Time>,
     mut last_cursor: Local<Option<Vec2>>,
 ) {
@@ -407,38 +406,38 @@ pub fn camera_controls(
         1.0
     };
 
-    // Keyboard pan (WASD + arrow keys)
-    let speed = 200.0 * cam_scale * time.delta_secs();
-    let mut move_dir = Vec2::ZERO;
+    // Keyboard pan (WASD + arrow keys) — move along the ground plane
+    let speed = 15.0 * cam_scale * time.delta_secs();
+    let forward = Vec3::new(transform.forward().x, 0.0, transform.forward().z).normalize_or_zero();
+    let right = Vec3::new(transform.right().x, 0.0, transform.right().z).normalize_or_zero();
 
+    let mut move_dir = Vec3::ZERO;
     if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp) {
-        move_dir.y += 1.0;
+        move_dir += forward;
     }
     if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown) {
-        move_dir.y -= 1.0;
+        move_dir -= forward;
     }
     if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft) {
-        move_dir.x -= 1.0;
+        move_dir -= right;
     }
     if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) {
-        move_dir.x += 1.0;
+        move_dir += right;
     }
 
-    if move_dir != Vec2::ZERO {
-        let move_dir = move_dir.normalize() * speed;
-        transform.translation.x += move_dir.x;
-        transform.translation.y += move_dir.y;
+    if move_dir != Vec3::ZERO {
+        transform.translation += move_dir.normalize() * speed;
     }
 
     // Scroll zoom
     for event in scroll_events.read() {
         if let Projection::Orthographic(ref mut ortho) = *projection {
             let factor = if event.y > 0.0 { 0.9 } else { 1.1 };
-            ortho.scale = (ortho.scale * factor).clamp(0.3, 3.0);
+            ortho.scale = (ortho.scale * factor).clamp(3.0, 30.0);
         }
     }
 
-    // Mouse drag pan (any button)
+    // Mouse drag pan
     let dragging = mouse_button.pressed(MouseButton::Left)
         || mouse_button.pressed(MouseButton::Middle)
         || mouse_button.pressed(MouseButton::Right);
@@ -447,9 +446,9 @@ pub fn camera_controls(
         if dragging {
             if let Some(last) = *last_cursor {
                 let delta = cursor - last;
-                // Screen pixels to world units, accounting for zoom
-                transform.translation.x -= delta.x * cam_scale;
-                transform.translation.y += delta.y * cam_scale;
+                let pan_speed = cam_scale * 0.05;
+                transform.translation -= right * delta.x * pan_speed;
+                transform.translation += forward * delta.y * pan_speed;
             }
         }
         *last_cursor = Some(cursor);
@@ -458,91 +457,4 @@ pub fn camera_controls(
     if !dragging {
         *last_cursor = None;
     }
-}
-
-/// Each frame, push the camera state into the global so JS can use it for tooltips.
-pub fn export_camera_state(
-    camera_q: Query<(&Transform, &Projection), With<Camera2d>>,
-    windows: Query<&Window>,
-) {
-    let Ok((transform, projection)) = camera_q.single() else {
-        return;
-    };
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let scale = if let Projection::Orthographic(ref ortho) = *projection {
-        ortho.scale
-    } else {
-        1.0
-    };
-    if let Ok(mut cam) = crate::CAMERA_STATE.lock() {
-        *cam = crate::CameraSnapshot {
-            x: transform.translation.x,
-            y: transform.translation.y,
-            scale,
-            win_w: window.width(),
-            win_h: window.height(),
-        };
-    }
-}
-
-/// Build tooltip lines for a given hex. Used by the exported wasm-bindgen function.
-pub fn tile_info_at(state: &GameStateView, col: i32, row: i32) -> Vec<String> {
-    let mut lines = Vec::new();
-
-    for unit in &state.units {
-        if unit.x == col && unit.y == row {
-            let type_name = match unit.unit_type {
-                UnitType::Worker => "Worker",
-                UnitType::Soldier => "Soldier",
-                UnitType::Scout => "Scout",
-            };
-            let status = match unit.status {
-                UnitStatus::Idle => "Idle",
-                UnitStatus::Moving => "Moving",
-                UnitStatus::Attacking => "Attacking",
-                UnitStatus::Harvesting => "Harvesting",
-                UnitStatus::Returning => "Returning",
-                UnitStatus::Dead => "Dead",
-            };
-            lines.push(format!(
-                "P{} {} - HP {}/{} [{}]",
-                unit.player_slot + 1,
-                type_name,
-                unit.hp,
-                unit.max_hp,
-                status,
-            ));
-        }
-    }
-
-    for building in &state.buildings {
-        if building.x == col && building.y == row {
-            let type_name = match building.building_type {
-                BuildingType::Base => "Base",
-                BuildingType::Turret => "Turret",
-                BuildingType::Wall => "Wall",
-            };
-            let mut info = format!(
-                "P{} {} - HP {}/{}",
-                building.player_slot + 1,
-                type_name,
-                building.hp,
-                building.max_hp,
-            );
-            if let Some(energy) = building.energy {
-                info.push_str(&format!(" [Energy: {}]", energy));
-            }
-            lines.push(info);
-        }
-    }
-
-    for resource in &state.resources {
-        if resource.x == col && resource.y == row {
-            lines.push(format!("Resource: {} remaining", resource.remaining));
-        }
-    }
-
-    lines
 }

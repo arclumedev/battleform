@@ -15,6 +15,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "bevy_text",
     "bevy_winit",
     "bevy_color",
+    "bevy_pbr",
     "png",
     "webgl2",
 ] }
