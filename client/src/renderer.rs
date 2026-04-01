@@ -101,7 +101,6 @@ pub fn setup_camera(mut commands: Commands) {
     commands.spawn((
         PointLight {
             intensity: 2_000_000.0,
-            shadows_enabled: false,
             ..default()
         },
         Transform::from_xyz(center.x, 30.0, center.y),
@@ -157,20 +156,12 @@ fn spawn_terrain(
     .into_iter()
     .map(|t| {
         let key = format!("{:?}", t);
-        let mat = materials.add(StandardMaterial {
-            base_color: tile_color(&t),
-            unlit: true,
-            ..default()
-        });
+        let mat = materials.add(tile_color(&t));
         (key, mat)
     })
     .collect();
 
-    let default_mat = materials.add(StandardMaterial {
-        base_color: tile_color(&TileType::Grass),
-        unlit: true,
-        ..default()
-    });
+    let default_mat = materials.add(tile_color(&TileType::Grass));
 
     for y in 0..state.map_height {
         for x in 0..state.map_width {
@@ -242,11 +233,7 @@ fn sync_units(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Capsule3d::new(radius, unit_height));
-            let mat = materials.add(StandardMaterial {
-                base_color: player_color(unit.player_slot),
-                unlit: true,
-                ..default()
-            });
+            let mat = materials.add(player_color(unit.player_slot));
 
             let entity = commands
                 .spawn((
@@ -300,11 +287,7 @@ fn sync_buildings(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Cuboid::new(building_w, building_h, building_w));
-            let mat = materials.add(StandardMaterial {
-                base_color: player_color(building.player_slot),
-                unlit: true,
-                ..default()
-            });
+            let mat = materials.add(player_color(building.player_slot));
 
             let entity = commands
                 .spawn((
@@ -356,11 +339,7 @@ fn sync_resources(
                 .insert(Transform::from_xyz(p.x, terrain_h + 0.2, p.y));
         } else {
             let mesh = meshes.add(Sphere::new(HEX_SIZE * 0.2));
-            let mat = materials.add(StandardMaterial {
-                base_color: Color::srgb(brightness, brightness * 0.9, 0.1),
-                unlit: true,
-                ..default()
-            });
+            let mat = materials.add(Color::srgb(brightness, brightness * 0.9, 0.1));
 
             let entity = commands
                 .spawn((

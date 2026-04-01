@@ -17,6 +17,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "bevy_color",
     "bevy_pbr",
     "png",
+    "webgl2",
     "webgpu",
 ] }
 wasm-bindgen = "0.2"
