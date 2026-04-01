@@ -1,0 +1,54 @@
+[package]
+name = "bf_game"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "battleform"
+path = "src/main.rs"
+required-features = ["native"]
+
+[features]
+default = ["wasm"]
+native = [
+    "bf_engine",
+    "bevy/default",
+]
+wasm = [
+    "dep:wasm-bindgen",
+    "dep:web-sys",
+    "bevy/webgl2",
+]
+dev = ["bevy/bevy_dev_tools"]
+
+[dependencies]
+bf_types = { path = "../bf_types" }
+bf_engine = { path = "../bf_engine", optional = true }
+bevy = { workspace = true, features = [
+    "bevy_asset",
+    "bevy_render",
+    "bevy_core_pipeline",
+    "bevy_pbr",
+    "bevy_text",
+    "bevy_winit",
+    "bevy_color",
+    "bevy_state",
+    "png",
+] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rmp-serde = { workspace = true }
+wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", features = ["console"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[package.metadata.wasm-pack.profile.dev]
+wasm-opt = false
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = ["-O3"]

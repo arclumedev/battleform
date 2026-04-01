@@ -1,0 +1,11 @@
+[package]
+name = "bf_engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bf_types = { path = "../bf_types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }

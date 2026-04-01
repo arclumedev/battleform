@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = ["crates/bf_types", "crates/bf_engine", "crates/bf_game"]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rmp-serde = "1"
+rand = { version = "0.9", features = ["small_rng"] }
+bevy = { version = "0.16", default-features = false }
+uuid = { version = "1", features = ["v4"] }
+
+# Fast dev builds: optimize dependencies but not our code
+[profile.dev]
+opt-level = 1
+[profile.dev.package."*"]
+opt-level = 3
+
+# WASM release profile
+[profile.wasm-release]
+inherits = "release"
+opt-level = "s"
+strip = "debuginfo"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"

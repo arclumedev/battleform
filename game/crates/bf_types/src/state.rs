@@ -1,7 +1,7 @@
-use bevy::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
-#[derive(Resource, Serialize, Deserialize, Clone, Debug, Default)]
+/// Complete game state snapshot as seen by the renderer / spectator.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct GameStateView {
     pub tick: u32,
@@ -117,7 +117,7 @@ pub struct UnitView {
     pub max_hp: i32,
     pub status: UnitStatus,
     #[serde(default)]
-    pub path: Vec<serde_json::Value>,
+    pub path: Vec<Position>,
     #[serde(default)]
     pub target_id: Option<String>,
     #[serde(default)]
@@ -165,7 +165,7 @@ pub struct VisUpdate {
     pub state: VisibilityState,
 }
 
-/// A single tile in the terrain grid.
+/// A single hex tile in the terrain grid.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct Tile {
     #[serde(rename = "type")]
@@ -178,7 +178,7 @@ fn default_elevation() -> u8 {
     1
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, Hash, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum TileType {
     #[default]
@@ -191,7 +191,7 @@ pub enum TileType {
     Snow,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum UnitType {
     Worker,
@@ -199,7 +199,7 @@ pub enum UnitType {
     Scout,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, Hash, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum UnitStatus {
     #[default]
@@ -211,7 +211,7 @@ pub enum UnitStatus {
     Dead,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Hash, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum BuildingType {
     Base,
@@ -219,13 +219,101 @@ pub enum BuildingType {
     Wall,
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, Hash, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum VisibilityState {
     #[default]
     Unseen,
     PreviouslySeen,
     Visible,
+}
+
+/// A hex grid position (col, row) in odd-r offset coordinates.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, Hash, Copy)]
+pub struct Position {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl Position {
+    pub fn new(x: i32, y: i32) -> Self {
+        Self { x, y }
+    }
+}
+
+/// Unit stat table — cost, HP, speed, range, damage, vision.
+#[derive(Clone, Debug)]
+pub struct UnitStats {
+    pub cost: i32,
+    pub hp: i32,
+    pub speed: u32,
+    pub range: u32,
+    pub damage: i32,
+    pub vision: u32,
+}
+
+pub const UNIT_STATS_WORKER: UnitStats = UnitStats {
+    cost: 50,
+    hp: 30,
+    speed: 2,
+    range: 1,
+    damage: 5,
+    vision: 3,
+};
+
+pub const UNIT_STATS_SOLDIER: UnitStats = UnitStats {
+    cost: 100,
+    hp: 80,
+    speed: 2,
+    range: 1,
+    damage: 20,
+    vision: 3,
+};
+
+pub const UNIT_STATS_SCOUT: UnitStats = UnitStats {
+    cost: 75,
+    hp: 40,
+    speed: 4,
+    range: 1,
+    damage: 10,
+    vision: 6,
+};
+
+pub fn unit_stats(unit_type: UnitType) -> &'static UnitStats {
+    match unit_type {
+        UnitType::Worker => &UNIT_STATS_WORKER,
+        UnitType::Soldier => &UNIT_STATS_SOLDIER,
+        UnitType::Scout => &UNIT_STATS_SCOUT,
+    }
+}
+
+/// Building constants.
+pub const BASE_HP: i32 = 500;
+pub const BASE_VISION: u32 = 4;
+pub const HARVEST_AMOUNT: i32 = 25;
+pub const STARTING_ENERGY: i32 = 200;
+
+/// Match phase.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum MatchPhase {
+    #[default]
+    Lobby,
+    Active,
+    Finished,
+}
+
+/// Tile movement costs (Infinity for impassable).
+pub fn tile_movement_cost(tile_type: TileType) -> f64 {
+    match tile_type {
+        TileType::Grass => 1.0,
+        TileType::Desert => 1.5,
+        TileType::Forest => 1.5,
+        TileType::Mountain => f64::INFINITY,
+        TileType::WaterLake => f64::INFINITY,
+        TileType::WaterSea => f64::INFINITY,
+        TileType::Snow => 2.0,
+    }
 }
 
 #[cfg(test)]
@@ -241,13 +329,17 @@ mod tests {
     }
 
     #[test]
-    fn test_tile_msgpack() {
-        // Simulate what msgpackr produces
-        let tile = Tile { tile_type: TileType::Desert, elevation: 2 };
-        let packed = rmp_serde::to_vec_named(&tile).unwrap();
-        let unpacked: Tile = rmp_serde::from_slice(&packed).unwrap();
-        assert_eq!(unpacked.tile_type, TileType::Desert);
-        assert_eq!(unpacked.elevation, 2);
+    fn test_unit_stats_lookup() {
+        let stats = unit_stats(UnitType::Worker);
+        assert_eq!(stats.cost, 50);
+        assert_eq!(stats.hp, 30);
+        assert_eq!(stats.speed, 2);
+    }
+
+    #[test]
+    fn test_tile_movement_costs() {
+        assert_eq!(tile_movement_cost(TileType::Grass), 1.0);
+        assert!(tile_movement_cost(TileType::Mountain).is_infinite());
     }
 
     #[test]
