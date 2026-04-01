@@ -1,6 +1,6 @@
 ## Context
 
-Battleform's game engine is ~1400 lines of TypeScript across 8 files in `backend/app/engine/`. The logic is pure game rules with no inherent web/database dependencies. Porting to Rust allows the game to run as a standalone native binary and embeds the engine directly in the Bevy renderer process.
+Battleform's game engine is ~1400 lines of TypeScript across 8 files in `multiplayer_server/app/engine/` (formerly `backend/`). The logic is pure game rules with no inherent web/database dependencies. Porting to Rust allows the game to run as a standalone native binary and embeds the engine directly in the Bevy renderer process.
 
 ## Goals / Non-Goals
 
@@ -12,9 +12,9 @@ Battleform's game engine is ~1400 lines of TypeScript across 8 files in `backend
 - The Rust binary is the game — it connects to AdonisJS as a client for multiplayer, not the other way around
 
 **Non-Goals:**
-- Rewriting the AdonisJS backend in Rust (it stays as the multiplayer service layer)
+- Rewriting the AdonisJS multiplayer server in Rust (it stays as the multiplayer service layer)
 - Changing game rules, balance, or mechanics (this is a 1:1 port)
-- Full multiplayer netcode (initial scope is local play; multiplayer connects to existing backend)
+- Full multiplayer netcode (initial scope is local play; multiplayer connects to existing multiplayer server)
 - Replacing the browser WASM spectator mode (it still works via the JS bridge)
 
 ## Decisions
@@ -27,54 +27,55 @@ Three Rust crates, using a `crates/` directory to keep the repo root clean:
 
 ```
 battleform/
-├── Cargo.toml                (workspace root)
-├── rust-toolchain.toml
-├── crates/
-│   ├── bf_types/             (shared types — no Bevy dependency)
-│   │   ├── Cargo.toml
-│   │   └── src/
-│   │       ├── lib.rs        (re-exports)
-│   │       ├── state.rs      (GameStateView, StateDiff, enums)
-│   │       ├── commands.rs   (Command enum, player config)
-│   │       └── hex.rs        (hex math — pure functions)
-│   ├── bf_engine/            (game simulation — no Bevy, no IO)
-│   │   ├── Cargo.toml        (depends on bf_types)
-│   │   └── src/
-│   │       ├── lib.rs        (GameEngine struct, tick loop)
-│   │       ├── commands.rs   (command execution + resolution)
-│   │       ├── pathfinding.rs
-│   │       ├── fog.rs
-│   │       ├── maps.rs
-│   │       ├── bot_ai.rs
-│   │       └── mcp.rs        (stdio MCP server)
-│   └── bf_client/            (Bevy app — renderer + integration)
-│       ├── Cargo.toml        (depends on bf_types, optionally bf_engine)
-│       └── src/
-│           ├── main.rs       (native binary entry point)
-│           ├── lib.rs        (WASM entry point + shared Bevy setup)
-│           ├── game.rs       (root GamePlugin)
-│           ├── camera.rs     (CameraPlugin — setup, orbit, zoom)
-│           ├── map.rs        (MapPlugin — terrain spawning)
-│           ├── units.rs      (UnitsPlugin — unit/building/resource sync)
-│           ├── hud.rs        (HudPlugin — tooltip, overlays)
-│           ├── input.rs      (InputPlugin — mouse/keyboard handling)
-│           ├── local_match.rs (LocalMatchPlugin — embedded engine)
-│           └── network.rs    (NetworkPlugin — WebSocket state receiver)
-├── backend/                  (unchanged — multiplayer service)
-└── frontend/                 (unchanged — browser shell)
+├── game/
+│   ├── Cargo.toml                (workspace root)
+│   ├── rust-toolchain.toml
+│   └── crates/
+│       ├── bf_types/             (shared types — no Bevy dependency)
+│       │   ├── Cargo.toml
+│       │   └── src/
+│       │       ├── lib.rs        (re-exports)
+│       │       ├── state.rs      (GameStateView, StateDiff, enums)
+│       │       ├── commands.rs   (Command enum, player config)
+│       │       └── hex.rs        (hex math — pure functions)
+│       ├── bf_engine/            (game simulation — no Bevy, no IO)
+│       │   ├── Cargo.toml        (depends on bf_types)
+│       │   └── src/
+│       │       ├── lib.rs        (GameEngine struct, tick loop)
+│       │       ├── commands.rs   (command execution + resolution)
+│       │       ├── pathfinding.rs
+│       │       ├── fog.rs
+│       │       ├── maps.rs
+│       │       ├── bot_ai.rs
+│       │       └── mcp.rs        (stdio MCP server)
+│       └── bf_game/              (Bevy app — renderer + integration)
+│           ├── Cargo.toml        (depends on bf_types, optionally bf_engine)
+│           └── src/
+│               ├── main.rs       (native binary entry point)
+│               ├── lib.rs        (WASM entry point + shared Bevy setup)
+│               ├── game.rs       (root GamePlugin)
+│               ├── camera.rs     (CameraPlugin — setup, orbit, zoom)
+│               ├── map.rs        (MapPlugin — terrain spawning)
+│               ├── units.rs      (UnitsPlugin — unit/building/resource sync)
+│               ├── hud.rs        (HudPlugin — tooltip, overlays)
+│               ├── input.rs      (InputPlugin — mouse/keyboard handling)
+│               ├── local_match.rs (LocalMatchPlugin — embedded engine)
+│               └── network.rs    (NetworkPlugin — WebSocket state receiver)
+├── multiplayer_server/           (formerly backend/ — multiplayer service)
+└── frontend/                     (unchanged — browser shell)
 ```
 
 **Why three crates instead of two:**
 
-- `bf_types` has zero Bevy dependency — just `serde` + pure Rust. It can be used by the backend (via WASM or FFI), agents, tests, and tooling without pulling in Bevy's compile times. Changing a type recompiles only this tiny crate + dependents.
-- `bf_engine` depends on `bf_types` but not Bevy. It's a headless simulation — pure game logic. Can be compiled to WASM independently for the backend to use, or run in tests without a GPU.
-- `bf_client` depends on both and adds the Bevy rendering layer. This is what compiles to the WASM spectator or the native binary.
+- `bf_types` has zero Bevy dependency — just `serde` + pure Rust. It can be used by the multiplayer server (via WASM or FFI), agents, tests, and tooling without pulling in Bevy's compile times. Changing a type recompiles only this tiny crate + dependents.
+- `bf_engine` depends on `bf_types` but not Bevy. It's a headless simulation — pure game logic. Can be compiled to WASM independently for the multiplayer server to use, or run in tests without a GPU.
+- `bf_game` depends on both and adds the Bevy rendering layer. This is what compiles to the WASM spectator or the native binary.
 
 **Workspace Cargo.toml:**
 ```toml
 [workspace]
 resolver = "2"
-members = ["crates/bf_types", "crates/bf_engine", "crates/bf_client"]
+members = ["crates/bf_types", "crates/bf_engine", "crates/bf_game"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -248,12 +249,12 @@ The client supports two modes via feature flags, following the Bevy template pat
 
 **WASM mode** (`wasm-pack build --no-default-features --features wasm`):
 - `lib.rs` boots the Bevy app as today (wasm_bindgen entry point)
-- State arrives via the JS bridge from the backend's WebSocket
-- Engine does NOT run in WASM (backend is authoritative for multiplayer)
+- State arrives via the JS bridge from the multiplayer server's WebSocket
+- Engine does NOT run in WASM (multiplayer server is authoritative for multiplayer)
 - Same renderer code (shared `GamePlugin`), different state source
 
 ```toml
-# crates/bf_client/Cargo.toml
+# crates/bf_game/Cargo.toml
 [features]
 default = ["native"]
 native = [
@@ -294,53 +295,53 @@ getrandom = { version = "0.3", features = ["wasm_js"] }
 Build commands:
 ```bash
 # Native development (fast iteration)
-cargo run -p bf_client
+cargo run -p bf_game
 
 # Native release
-cargo build --release -p bf_client
+cargo build --release -p bf_game
 
 # WASM build
-wasm-pack build crates/bf_client --no-default-features --features wasm \
+wasm-pack build crates/bf_game --no-default-features --features wasm \
     --target web --out-dir ../../frontend/public/pkg
 
 # WASM optimized
-wasm-pack build crates/bf_client --no-default-features --features wasm \
+wasm-pack build crates/bf_game --no-default-features --features wasm \
     --target web --out-dir ../../frontend/public/pkg --release
-wasm-opt -Oz -o frontend/public/pkg/bf_client_bg.wasm \
-    frontend/public/pkg/bf_client_bg.wasm
+wasm-opt -Oz -o frontend/public/pkg/bf_game_bg.wasm \
+    frontend/public/pkg/bf_game_bg.wasm
 ```
 
-### Multiplayer: engine connects to backend
+### Multiplayer: engine connects to multiplayer server
 
 The Rust binary is the game. AdonisJS is a service it optionally connects to. The dependency flows one direction:
 
 ```
-Engine (Rust binary) ──connects to──▶ Backend (AdonisJS)
+Engine (Rust binary) ──connects to──▶ Multiplayer Server (AdonisJS)
                                          ├── Auth (login, sessions)
                                          ├── Matchmaking (lobby, slots)
                                          └── State relay (WebSocket hub)
 ```
 
-The backend never imports, calls, or wraps the Rust engine. It's infrastructure — like a game server browser or relay service.
+The multiplayer server never imports, calls, or wraps the Rust engine. It's infrastructure — like a game server browser or relay service.
 
 **Two multiplayer modes:**
 
 **Host mode (peer-relayed):**
-One player's engine is authoritative. Their native binary runs the engine and sends state diffs to the backend. The backend relays diffs to other connected players (spectators and opponents). Opponents send commands to the backend, which relays them to the host's engine. Low infrastructure cost, but the host has a latency advantage.
+One player's engine is authoritative. Their native binary runs the engine and sends state diffs to the multiplayer server. The server relays diffs to other connected players (spectators and opponents). Opponents send commands to the server, which relays them to the host's engine. Low infrastructure cost, but the host has a latency advantage.
 
 ```
-Host engine ──state diffs──▶ Backend ──relay──▶ Other players
-Other players ──commands──▶ Backend ──relay──▶ Host engine
+Host engine ──state diffs──▶ Multiplayer Server ──relay──▶ Other players
+Other players ──commands──▶ Multiplayer Server ──relay──▶ Host engine
 ```
 
 **Dedicated server mode (competitive):**
-The backend runs its own engine instance (the existing TS engine, or later a WASM-compiled Rust engine) for fairness. All players send commands to the backend, which ticks its own authoritative engine and broadcasts diffs. This is the current architecture — it stays as-is for ranked/competitive play.
+The multiplayer server runs its own engine instance (the existing TS engine, or later a WASM-compiled Rust engine) for fairness. All players send commands to the server, which ticks its own authoritative engine and broadcasts diffs. This is the current architecture — it stays as-is for ranked/competitive play.
 
 ```
-All players ──commands──▶ Backend (authoritative engine) ──diffs──▶ All players
+All players ──commands──▶ Multiplayer Server (authoritative engine) ──diffs──▶ All players
 ```
 
-The native binary doesn't care which mode is active — it sends commands to the backend and receives diffs, same as the WASM browser client does today. The only difference is that in host mode, one client also sends diffs upstream instead of just receiving them.
+The native binary doesn't care which mode is active — it sends commands to the server and receives diffs, same as the WASM browser client does today. The only difference is that in host mode, one client also sends diffs upstream instead of just receiving them.
 
 **Connection flow for multiplayer:**
 1. Player launches native binary, chooses "Online Play"
@@ -348,9 +349,9 @@ The native binary doesn't care which mode is active — it sends commands to the
 3. Binary calls `GET /api/matches` or `POST /api/matches` for lobby
 4. Binary opens WebSocket to `/api/matches/{id}/spectate` for state
 5. Binary sends commands via `POST /api/mcp` (same as AI agents do today)
-6. When match ends, binary shows results locally — no dependency on backend for the UI
+6. When match ends, binary shows results locally — no dependency on the multiplayer server for the UI
 
-This means the backend API surface doesn't change at all. The native binary is just another client, using the same endpoints as the Vue frontend and MCP agents.
+This means the multiplayer server API surface doesn't change at all. The native binary is just another client, using the same endpoints as the Vue frontend and MCP agents.
 
 ### MCP stdio transport
 
@@ -360,7 +361,7 @@ For local play, AI agents connect to the engine via stdio MCP:
 agent process ←→ stdio ←→ native binary (engine + MCP server)
 ```
 
-The engine crate includes an MCP server that exposes the same 5 tools as the backend (`get_game_state`, `spawn_unit`, `move_unit`, `attack_target`, `harvest`). The native binary spawns the agent as a child process and pipes MCP messages over stdin/stdout.
+The engine crate includes an MCP server that exposes the same 5 tools as the multiplayer server (`get_game_state`, `spawn_unit`, `move_unit`, `attack_target`, `harvest`). The native binary spawns the agent as a child process and pipes MCP messages over stdin/stdout.
 
 This uses the `rmcp` Rust MCP SDK (or a lightweight custom implementation) rather than the Node.js `@modelcontextprotocol/sdk`.
 
@@ -383,15 +384,15 @@ Total: ~1409 lines of TypeScript → estimated ~1200-1600 lines of Rust (Rust is
 
 ### State serialization compatibility
 
-The engine's `GameStateView` and `StateDiff` are serialized with MessagePack (and JSON fallback) for the WebSocket protocol. The Rust types already have `#[derive(Serialize, Deserialize)]` with `#[serde(rename_all = "camelCase")]` to match the backend's JSON field names. This compatibility is maintained — the same serialization format works whether state comes from the Rust engine or the TypeScript backend.
+The engine's `GameStateView` and `StateDiff` are serialized with MessagePack (and JSON fallback) for the WebSocket protocol. The Rust types already have `#[derive(Serialize, Deserialize)]` with `#[serde(rename_all = "camelCase")]` to match the multiplayer server's JSON field names. This compatibility is maintained — the same serialization format works whether state comes from the Rust engine or the TypeScript multiplayer server.
 
 ## Risks / Trade-offs
 
 | Risk | Mitigation |
 |---|---|
-| Behavior drift between Rust engine and TypeScript backend | Write property-based tests that run identical command sequences through both engines and compare state. Eventually deprecate the TS version. |
+| Behavior drift between Rust engine and TypeScript multiplayer server | Write property-based tests that run identical command sequences through both engines and compare state. Eventually deprecate the TS version. |
 | Rust engine bugs in combat/pathfinding | Port tests alongside logic. The TypeScript engine's behavior is the reference. |
 | MCP stdio complexity | Start simple: single agent, synchronous tool calls. Async multi-agent is a follow-up. |
-| WASM bundle size with engine included | Engine is NOT included in WASM builds (feature-gated). WASM clients still use the backend. |
+| WASM bundle size with engine included | Engine is NOT included in WASM builds (feature-gated). WASM clients still use the multiplayer server. |
 | `rand` crate in map generation | Use `rand` with `SmallRng` and a seed for deterministic maps. Same seed = same map across platforms. |
-| Workspace refactor breaks wasm-pack | wasm-pack targets `client/` crate specifically. Engine is a dependency, not the build target. |
+| Workspace refactor breaks wasm-pack | wasm-pack targets `game/crates/bf_game/` crate specifically. Engine is a dependency, not the build target. |

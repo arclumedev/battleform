@@ -11,9 +11,9 @@
     "lint-staged": "^16.4.0"
   },
   "lint-staged": {
-    "backend/**/*.{ts,tsx}": [
-      "bash -c 'cd backend && npm run lint -- --no-error-on-unmatched-pattern'",
-      "bash -c 'cd backend && npm run typecheck'"
+    "multiplayer_server/**/*.{ts,tsx}": [
+      "bash -c 'cd multiplayer_server && npm run lint -- --no-error-on-unmatched-pattern'",
+      "bash -c 'cd multiplayer_server && npm run typecheck'"
     ],
     "frontend/**/*.{ts,tsx,vue}": [
       "bash -c 'cd frontend && npm run lint -- --no-error-on-unmatched-pattern'",
