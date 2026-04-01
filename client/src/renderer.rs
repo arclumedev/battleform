@@ -157,18 +157,18 @@ fn spawn_terrain(
     .into_iter()
     .map(|t| {
         let key = format!("{:?}", t);
-        let mat = materials.add(StandardMaterial { unlit: true,
+        let mat = materials.add(StandardMaterial {
             base_color: tile_color(&t),
-            perceptual_roughness: 0.9,
-            metallic: 0.0,
+            unlit: true,
             ..default()
         });
         (key, mat)
     })
     .collect();
 
-    let default_mat = materials.add(StandardMaterial { unlit: true,
+    let default_mat = materials.add(StandardMaterial {
         base_color: tile_color(&TileType::Grass),
+        unlit: true,
         ..default()
     });
 
@@ -242,10 +242,9 @@ fn sync_units(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Capsule3d::new(radius, unit_height));
-            let mat = materials.add(StandardMaterial { unlit: true,
+            let mat = materials.add(StandardMaterial {
                 base_color: player_color(unit.player_slot),
-                perceptual_roughness: 0.5,
-                metallic: 0.2,
+                unlit: true,
                 ..default()
             });
 
@@ -301,10 +300,9 @@ fn sync_buildings(
                 .insert(Transform::from_xyz(p.x, y_pos, p.y));
         } else {
             let mesh = meshes.add(Cuboid::new(building_w, building_h, building_w));
-            let mat = materials.add(StandardMaterial { unlit: true,
+            let mat = materials.add(StandardMaterial {
                 base_color: player_color(building.player_slot),
-                perceptual_roughness: 0.6,
-                metallic: 0.1,
+                unlit: true,
                 ..default()
             });
 
@@ -358,11 +356,9 @@ fn sync_resources(
                 .insert(Transform::from_xyz(p.x, terrain_h + 0.2, p.y));
         } else {
             let mesh = meshes.add(Sphere::new(HEX_SIZE * 0.2));
-            let mat = materials.add(StandardMaterial { unlit: true,
+            let mat = materials.add(StandardMaterial {
                 base_color: Color::srgb(brightness, brightness * 0.9, 0.1),
-                emissive: LinearRgba::new(brightness * 0.3, brightness * 0.25, 0.0, 1.0),
-                perceptual_roughness: 0.3,
-                metallic: 0.5,
+                unlit: true,
                 ..default()
             });
 
@@ -416,7 +412,7 @@ pub fn camera_controls(
     };
 
     // Keyboard pan (WASD + arrow keys) — move along the ground plane
-    let speed = 15.0 * cam_scale * time.delta_secs();
+    let speed = 0.3 * cam_scale * time.delta_secs();
     let forward = Vec3::new(transform.forward().x, 0.0, transform.forward().z).normalize_or_zero();
     let right = Vec3::new(transform.right().x, 0.0, transform.right().z).normalize_or_zero();
 
@@ -459,7 +455,7 @@ pub fn camera_controls(
         if dragging {
             if let Some(last) = *last_cursor {
                 let delta = cursor - last;
-                let pan_speed = cam_scale * 0.05;
+                let pan_speed = cam_scale * 0.002;
                 transform.translation -= right * delta.x * pan_speed;
                 transform.translation += forward * delta.y * pan_speed;
             }
