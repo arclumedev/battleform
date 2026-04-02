@@ -1,6 +1,6 @@
 use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-use bevy::render::camera::ScalingMode;
+use bevy::camera::ScalingMode;
 
 use bf_types::hex::hex_to_pixel;
 use crate::game::GameSystems;
@@ -63,7 +63,7 @@ fn setup_camera(mut commands: Commands) {
 fn camera_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mouse_button: Res<ButtonInput<MouseButton>>,
-    mut scroll_events: EventReader<MouseWheel>,
+    mut scroll_events: MessageReader<MouseWheel>,
     windows: Query<&Window>,
     mut camera: Query<(&mut Transform, &mut Projection), With<Camera3d>>,
     time: Res<Time>,

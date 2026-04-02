@@ -2,9 +2,44 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "Client: Build WASM (Dev)",
+      "label": "Game: Watch (Hot Reload)",
       "type": "shell",
-      "command": "cd client && wasm-pack build --dev --target web --out-dir ../frontend/public/pkg",
+      "command": "/Users/samuelcrane/.cargo/bin/cargo watch -w crates -x 'run -p bf_game --no-default-features --features hot --bin battleform'",
+      "options": {
+        "cwd": "${workspaceFolder}/game",
+        "env": {
+          "RUST_LOG": "info"
+        }
+      },
+      "group": "build",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "rustc",
+        "fileLocation": ["relative", "${workspaceFolder}/game"],
+        "pattern": {
+          "regexp": "^error\\[(.*)\\]: (.*)$",
+          "code": 1,
+          "message": 2
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\[Running",
+          "endsPattern": "^\\[Finished"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "Game: WASM Build (Dev)",
+      "type": "shell",
+      "command": "/Users/samuelcrane/.cargo/bin/wasm-pack build --dev --target web --out-dir ../../frontend/public/pkg crates/bf_game -- --no-default-features --features wasm",
+      "options": {
+        "cwd": "${workspaceFolder}/game"
+      },
       "group": "build",
       "problemMatcher": ["$rustc"],
       "presentation": {
@@ -15,9 +50,12 @@
       }
     },
     {
-      "label": "Client: Build WASM (Release)",
+      "label": "Game: WASM Build (Release)",
       "type": "shell",
-      "command": "cd client && wasm-pack build --release --target web --out-dir ../frontend/public/pkg",
+      "command": "/Users/samuelcrane/.cargo/bin/wasm-pack build --release --target web --out-dir ../../frontend/public/pkg crates/bf_game -- --no-default-features --features wasm",
+      "options": {
+        "cwd": "${workspaceFolder}/game"
+      },
       "group": "build",
       "problemMatcher": ["$rustc"],
       "presentation": {
@@ -26,6 +64,26 @@
         "showReuseMessage": false,
         "close": true
       }
+    },
+    {
+      "label": "Game: Clippy (Native)",
+      "type": "shell",
+      "command": "/Users/samuelcrane/.cargo/bin/cargo clippy -p bf_game --no-default-features --features native -- -D warnings",
+      "options": {
+        "cwd": "${workspaceFolder}/game"
+      },
+      "group": "test",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "Game: Clippy (WASM)",
+      "type": "shell",
+      "command": "/Users/samuelcrane/.cargo/bin/cargo clippy -p bf_game --no-default-features --features wasm --target wasm32-unknown-unknown -- -D warnings",
+      "options": {
+        "cwd": "${workspaceFolder}/game"
+      },
+      "group": "test",
+      "problemMatcher": ["$rustc"]
     }
   ]
 }

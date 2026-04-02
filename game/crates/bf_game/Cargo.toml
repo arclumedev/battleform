@@ -17,6 +17,10 @@ native = [
     "bf_engine",
     "bevy/default",
 ]
+hot = [
+    "native",
+    "bevy/dynamic_linking",
+]
 wasm = [
     "dep:wasm-bindgen",
     "dep:web-sys",
@@ -37,6 +41,8 @@ bevy = { workspace = true, features = [
     "bevy_color",
     "bevy_state",
     "png",
+    "mouse",
+    "keyboard",
 ] }
 serde = { workspace = true }
 serde_json = { workspace = true }

@@ -57,7 +57,7 @@ Use ArcLume MCP tools to access infrastructure. Infrastructure lives in the **Ro
 
 ## Node Version
 
-Use Node 22 LTS. The repo has an `.nvmrc` — run `nvm use` before working.
+Use Node 25. The repo has an `.nvmrc` — run `nvm use` before working.
 
 ## Pre-commit Hooks (Husky)
 

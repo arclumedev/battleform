@@ -77,6 +77,7 @@ macro_rules! log {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! warn_log {
     ($($arg:tt)*) => {
         #[cfg(feature = "wasm")]
@@ -86,6 +87,7 @@ macro_rules! warn_log {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! error_log {
     ($($arg:tt)*) => {
         #[cfg(feature = "wasm")]

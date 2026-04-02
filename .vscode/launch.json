@@ -5,9 +5,11 @@
       "name": "Backend: AdonisJS",
       "type": "node",
       "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
+      "cwd": "${workspaceFolder}/multiplayer_server",
+      "runtimeVersion": "25",
       "runtimeExecutable": "node",
       "runtimeArgs": ["ace", "serve", "--hmr"],
+      "envFile": "${workspaceFolder}/multiplayer_server/.env",
       "skipFiles": ["<node_internals>/**"],
       "console": "internalConsole",
       "env": {
@@ -26,7 +28,8 @@
       "name": "Backend: Migrations",
       "type": "node",
       "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
+      "cwd": "${workspaceFolder}/multiplayer_server",
+      "runtimeVersion": "25",
       "runtimeExecutable": "node",
       "runtimeArgs": ["ace", "migration:run"],
       "skipFiles": ["<node_internals>/**"],
@@ -36,7 +39,8 @@
       "name": "Backend: Seeds",
       "type": "node",
       "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
+      "cwd": "${workspaceFolder}/multiplayer_server",
+      "runtimeVersion": "25",
       "runtimeExecutable": "node",
       "runtimeArgs": ["ace", "db:seed"],
       "skipFiles": ["<node_internals>/**"],
@@ -46,10 +50,62 @@
       "name": "Backend: Tests",
       "type": "node",
       "request": "launch",
-      "cwd": "${workspaceFolder}/backend",
+      "cwd": "${workspaceFolder}/multiplayer_server",
+      "runtimeVersion": "25",
       "runtimeExecutable": "node",
       "runtimeArgs": ["ace", "test"],
       "skipFiles": ["<node_internals>/**"],
+      "console": "internalConsole"
+    },
+    {
+      "name": "Game: Native (Debug)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--manifest-path", "${workspaceFolder}/game/Cargo.toml", "-p", "bf_game", "--no-default-features", "--features", "native", "--bin", "battleform"],
+        "filter": {
+          "name": "battleform",
+          "kind": "bin"
+        }
+      },
+      "cwd": "${workspaceFolder}/game",
+      "env": {
+        "RUST_LOG": "info"
+      },
+      "console": "internalConsole"
+    },
+    {
+      "name": "Game: Native (Hot Reload)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--manifest-path", "${workspaceFolder}/game/Cargo.toml", "-p", "bf_game", "--no-default-features", "--features", "hot", "--bin", "battleform"],
+        "filter": {
+          "name": "battleform",
+          "kind": "bin"
+        }
+      },
+      "cwd": "${workspaceFolder}/game",
+      "env": {
+        "RUST_LOG": "info"
+      },
+      "console": "internalConsole"
+    },
+    {
+      "name": "Game: Native (Release)",
+      "type": "lldb",
+      "request": "launch",
+      "cargo": {
+        "args": ["build", "--manifest-path", "${workspaceFolder}/game/Cargo.toml", "-p", "bf_game", "--no-default-features", "--features", "native", "--bin", "battleform", "--release"],
+        "filter": {
+          "name": "battleform",
+          "kind": "bin"
+        }
+      },
+      "cwd": "${workspaceFolder}/game",
+      "env": {
+        "RUST_LOG": "info"
+      },
       "console": "internalConsole"
     },
     {
@@ -77,6 +133,10 @@
     {
       "name": "Full Stack (Backend + Frontend)",
       "configurations": ["Backend: AdonisJS", "Frontend: Vite Dev"]
+    },
+    {
+      "name": "Full Stack + Native Game",
+      "configurations": ["Backend: AdonisJS", "Frontend: Vite Dev", "Game: Native (Debug)"]
     }
   ]
 }
